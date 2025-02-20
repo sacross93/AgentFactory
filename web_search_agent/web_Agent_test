@@ -1,0 +1,231 @@
+from glob import glob
+import pandas as pd
+import google.generativeai as genai
+import os
+from dotenv import load_dotenv
+import time
+from datetime import datetime
+from typing import Dict, Any
+from tavily import TavilyClient
+import json
+import logging
+from pathlib import Path
+from pydantic import BaseModel
+from typing import Optional
+import enum
+
+# 환경 변수 로드 및 API 설정
+load_dotenv('./.env')
+genai.configure(api_key=os.getenv('GEMINI_API_KEY_JY'))
+os.environ['TAVILY_API_KEY'] = os.getenv('TAVILY_API_KEY_JY')
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# 상태 타입 정의
+StateType = Dict[str, Any]
+
+# Tavily 클라이언트 초기화
+tavily_client = TavilyClient()
+
+# 현재 날짜 저장
+current_date = datetime.now().strftime("%Y-%m-%d")
+
+# 로깅 설정
+log_dir = Path("./web_search_agent")
+log_dir.mkdir(exist_ok=True)
+log_file = log_dir / "search_agent.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# ------------------------------------------------------------------
+# 검색 도구: 한글과 영어로 검색 후 결과 합치기
+def search_tool(state: StateType) -> StateType:
+    query = state['query']
+    logger.info(f"검색어 '{query}'로 한글 검색 진행")
+    # tavily_client.search에 language 파라미터가 지원된다고 가정
+    search_results_ko = tavily_client.search(query, search_depth="advanced", language="ko")
+    logger.info(f"검색어 '{query}'로 영어 검색 진행")
+    search_results_en = tavily_client.search(query, search_depth="advanced", language="en")
+    
+    # 검색 결과가 dict 형태라면 'results' 키를 추출, 아니면 그대로 list로 간주
+    def extract_results(data):
+        if isinstance(data, dict):
+            return data.get('results', [])
+        elif isinstance(data, list):
+            return data
+        else:
+            return []
+    
+    results_ko = extract_results(search_results_ko)
+    results_en = extract_results(search_results_en)
+    combined_results = results_ko + results_en
+    logger.info(f"총 {len(combined_results)}개의 검색 결과를 찾음")
+    state['search_results'] = combined_results
+    return state
+
+# ------------------------------------------------------------------
+# 요약 도구: 검색 결과를 한글로 요약하여 JSON 배열(리스트)로 출력
+def summarize_tool(state: StateType) -> StateType:
+    logger.info("검색 결과 요약 진행 (Chain-of-Density 방식)")
+    results = state.get('search_results', [])
+    
+    contents = []
+    if isinstance(results, list):
+        for result in results:
+            if isinstance(result, dict):
+                title = result.get('title', '')
+                content = result.get('content', '')
+                url = result.get('url', '')
+                contents.append(f"Title: {title}\nContent: {content}\nURL: {url}")
+            else:
+                contents.append(str(result))
+    else:
+        contents = [str(results)]
+    
+    prompt = f"""Please summarize the following search results using the Chain-of-Density method.
+Provide the summary IN KOREAN following this structure:
+1. First, write a short initial summary (1-2 sentences)
+2. Then, gradually expand the summary by adding more specific details in each iteration
+3. Create at least 3 increasingly detailed versions
+4. Finally, combine the key information into a comprehensive summary
+
+For each search result, create a summary and output as a JSON array.
+The output must be a clean JSON array without markdown formatting.
+
+Current date: {current_date}
+Search Results:
+{json.dumps(contents, ensure_ascii=False, indent=2)}
+"""
+    try:
+        response = model.generate_content(prompt)
+        try:
+            # 응답에서 ```json과 같은 마크다운 포맷팅 제거
+            cleaned_response = response.text.replace('```json', '').replace('```', '').strip()
+            summary_list = json.loads(cleaned_response)
+            if not isinstance(summary_list, list):
+                summary_list = [summary_list]
+            state['summary'] = summary_list
+        except json.JSONDecodeError:
+            # JSON 파싱에 실패하면 텍스트 그대로 저장
+            state['summary'] = response.text
+        logger.info("요약 생성 성공")
+        return state
+    except Exception as e:
+        logger.error(f"요약 도구 오류: {str(e)}", exc_info=True)
+        state['summary'] = "요약 생성 중 오류 발생"
+        return state
+
+# ------------------------------------------------------------------
+# 검증 도구: 검색 결과 개수와 요약의 적절성을 평가하여, 부족하면 새로운 검색어 제안
+class VerificationStatus(enum.Enum):
+    ADEQUATE = "adequate"
+    INADEQUATE = "inadequate"
+
+class VerificationResult(BaseModel):
+    is_adequate: bool
+    missing_info: str
+    new_query: str
+
+def verify_tool(state: StateType) -> StateType:
+    logger.info("검색 결과 및 요약 검증 진행")
+    original_query = state['query']
+    current_summary = state.get('summary', '')
+    found_count = len(state.get('search_results', []))
+    desired_count = state.get('desired_count', 5)
+    
+    prompt = f"""Current query: {original_query}
+Search results count: {found_count} (Target count: {desired_count})
+
+Your task is to analyze the current search results and suggest a better search query.
+The search results are insufficient ({found_count} out of {desired_count}).
+
+Please suggest a new search query that:
+1. Broadens or modifies the original query to find more results
+2. Maintains the core intent of finding information about {original_query}
+3. Uses different keywords or approaches if the current query isn't effective
+
+Current summary of results:
+{current_summary}
+
+Respond with a complete sentence explaining why the current results are insufficient,
+followed by your suggested new search query.
+"""
+    try:
+        response = model.generate_content(prompt)
+        
+        # 응답에서 새로운 검색어 추출
+        response_text = response.text
+        new_query = response_text.split('\n')[-1].strip()  # 마지막 줄을 새로운 검색어로 사용
+        
+        verification_result = {
+            "is_adequate": found_count >= desired_count,
+            "missing_info": response_text.split('\n')[0],  # 첫 줄을 설명으로 사용
+            "new_query": new_query
+        }
+        
+        state['verification'] = verification_result
+        if not verification_result["is_adequate"]:
+            logger.info(f"검색 결과/요약 부족: {verification_result['missing_info']}")
+            logger.info(f"새로운 검색어 제안: {verification_result['new_query']}")
+            state['query'] = verification_result['new_query']  # 새로운 검색어로 업데이트
+        else:
+            logger.info("검색 결과와 요약이 충분함")
+            
+    except Exception as e:
+        logger.error(f"검증 도구 예외: {str(e)}", exc_info=True)
+        # 에러 발생 시에도 검색 결과가 부족하면 계속 진행
+        broader_query = f"{original_query} (연구 OR research) (논문 OR papers) (출판 OR publications)"
+        state['verification'] = {
+            "is_adequate": found_count >= desired_count,
+            "missing_info": f"검색 결과가 부족합니다 ({found_count}/{desired_count})",
+            "new_query": broader_query
+        }
+        state['query'] = broader_query  # 에러 시에도 검색어 업데이트
+    
+    return state
+
+# ------------------------------------------------------------------
+# 반복문 기반 실행 함수: 원하는 결과 개수(예: 5개)를 만족할 때까지 검색/요약/검증을 반복
+def process_query(query: str, max_iterations: int = 3, desired_count: int = 5) -> Dict:
+    state: StateType = {
+        "query": query,
+        "iteration": 0,
+        "max_iterations": max_iterations,
+        "desired_count": desired_count
+    }
+    
+    while state["iteration"] < max_iterations:
+        logger.info(f"반복 {state['iteration']+1}회 / 최대 {max_iterations}회")
+        state = search_tool(state)
+        state = summarize_tool(state)
+        state = verify_tool(state)
+        
+        # 검증 결과가 충분하다면 종료
+        if state.get("verification", {}).get("is_adequate", True):
+            logger.info("검색 결과와 요약이 충분하다고 판단되어 반복 종료")
+            break
+        else:
+            logger.info("결과가 부족하여 새로운 검색어로 재검색")
+            state["iteration"] += 1
+    
+    return {
+        "summary": state.get('summary', ''),
+        "query": state.get('query', ''),
+        "date": current_date,
+        "verification": state.get('verification', {}),
+        "search_results": state.get('search_results', [])
+    }
+
+# ------------------------------------------------------------------
+# 실행 예시
+result = process_query("2025년에 게재된 LLM 관련 탑티어 논문에 대해 알려줘", max_iterations=30, desired_count=50)
+
+
+from pprint import pprint
+pprint(result)
