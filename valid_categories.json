@@ -1,0 +1,92 @@
+{
+  "2_9": {
+    "name": "CPU",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "9"
+    },
+    "products": []
+  },
+  "2_10": {
+    "name": "Memory",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "10"
+    },
+    "products": []
+  },
+  "2_11": {
+    "name": "Mainboard",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "11"
+    },
+    "products": []
+  },
+  "2_12": {
+    "name": "VGA",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "12"
+    },
+    "products": []
+  },
+  "2_13": {
+    "name": "SSD",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "13"
+    },
+    "products": []
+  },
+  "2_14": {
+    "name": "ODD",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "14"
+    },
+    "products": []
+  },
+  "2_15": {
+    "name": "Power",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "15"
+    },
+    "products": []
+  },
+  "2_16": {
+    "name": "Case",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "16"
+    },
+    "products": []
+  },
+  "2_17": {
+    "name": "Keyboard",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "17"
+    },
+    "products": []
+  },
+  "2_18": {
+    "name": "Mouse",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "18"
+    },
+    "products": []
+  }
+}

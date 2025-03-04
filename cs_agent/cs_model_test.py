@@ -4,8 +4,8 @@ import torch
 def setup_model():
     # 모델과 토크나이저 로드
     model_name = "perplexity-ai/r1-1776"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
     
     # GPU 사용 가능시 GPU로 이동
     device = "cuda" if torch.cuda.is_available() else "cpu"
