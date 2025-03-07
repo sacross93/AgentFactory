@@ -6,14 +6,25 @@ from datetime import datetime
 import time
 import pandas as pd
 import re
+import os
 
-# 로깅 설정: 터미널 출력 없이 파일에만 기록됨
-log_filename = f'product_html_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+# raw_xlsx 폴더 생성
+os.makedirs('./cs_agent/raw_xlsx', exist_ok=True)
+
+# 로그 설정 - 로그 파일을 raw_xlsx 폴더에 저장
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_filename = f"./cs_agent/raw_xlsx/analysis_log_{timestamp}.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler(log_filename, encoding='utf-8', mode='w')]
+    handlers=[
+        logging.FileHandler(log_filename, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
 )
+
+logging.info(f"로그 파일이 {log_filename}에 저장됩니다.")
 
 def load_categories():
     try:
@@ -159,6 +170,11 @@ def extract_product_info(session, product_url):
             soup = BeautifulSoup(response.text, 'html.parser')
             info_dict = {}
             
+            # 제품명 추출 (span.name에서 가져오기)
+            product_name_elem = soup.select_one('span.name')
+            if product_name_elem:
+                info_dict['제품명(전체)'] = product_name_elem.get_text(strip=True)
+            
             # 상세 정보 테이블 찾기
             table = soup.select_one('.more_info.info table')
             
@@ -205,6 +221,8 @@ def analyze_all_categories():
     session = requests.Session()
     category_dataframes = {}
     
+    # raw_xlsx 폴더는 이미 파일 상단에서 생성됨
+    
     try:
         for category_key, category in categories.items():
             logging.info("="*50)
@@ -215,6 +233,14 @@ def analyze_all_categories():
                 df = check_category_products(session, category)
                 if df is not None and not df.empty:
                     category_dataframes[category['name']] = df
+                    
+                    # 각 카테고리별로 Excel 파일 저장
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    excel_filename = f"./cs_agent/raw_xlsx/{category['name']}_{timestamp}.xlsx"
+                    df.to_excel(excel_filename, index=False)
+                    logging.info(f"✅ '{category['name']}' 데이터를 {excel_filename}에 저장했습니다.")
+                    print(f"✅ '{category['name']}' 데이터를 {excel_filename}에 저장했습니다.")
+                    
                     # 각 카테고리 처리 후 현재 상태 출력
                     print(f"\n현재까지 처리된 카테고리: {list(category_dataframes.keys())}")
                     print(f"마지막으로 처리된 카테고리 '{category['name']}'의 데이터 샘플 (처음 5개 행):")
@@ -244,10 +270,22 @@ if __name__ == "__main__":
         
         if category_dfs:
             logging.info("=== 최종 결과 ===")
-            for category_name, df in category_dfs.items():
-                logging.info(f"{category_name}: {len(df)}개 제품")
-                # 디버깅을 위해 데이터프레임 내용 출력
-                print(f"\n{category_name} 데이터프레임:")
-                print(df.head())
+            
+            # 모든 카테고리 데이터를 하나의 Excel 파일로 저장
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            all_data_filename = f"./cs_agent/raw_xlsx/all_categories_{timestamp}.xlsx"
+            
+            with pd.ExcelWriter(all_data_filename) as writer:
+                for category_name, df in category_dfs.items():
+                    logging.info(f"{category_name}: {len(df)}개 제품")
+                    # 각 카테고리를 별도의 시트로 저장
+                    df.to_excel(writer, sheet_name=category_name[:31], index=False)  # 시트 이름 최대 31자
+                    
+                    # 디버깅을 위해 데이터프레임 내용 출력
+                    print(f"\n{category_name} 데이터프레임:")
+                    print(df.head())
+            
+            logging.info(f"✅ 모든 카테고리 데이터를 {all_data_filename}에 저장했습니다.")
+            print(f"✅ 모든 카테고리 데이터를 {all_data_filename}에 저장했습니다.")
     except KeyboardInterrupt:
         logging.info("프로그램이 사용자에 의해 중단되었습니다.")
