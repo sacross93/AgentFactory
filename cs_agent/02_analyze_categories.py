@@ -221,13 +221,37 @@ def analyze_all_categories():
     session = requests.Session()
     category_dataframes = {}
     
-    # raw_xlsx 폴더는 이미 파일 상단에서 생성됨
+    # 오늘 날짜 형식 지정
+    today_date = datetime.now().strftime("%Y%m%d")
     
     try:
         for category_key, category in categories.items():
             logging.info("="*50)
             logging.info(f"카테고리 '{category['name']}' 처리 시작")
             print(f"\n카테고리 '{category['name']}' 처리 시작...")
+            
+            # 오늘 날짜로 생성된 파일이 있는지 확인
+            category_files = [f for f in os.listdir('./cs_agent/raw_xlsx') 
+                              if f.startswith(f"{category['name']}_") and 
+                              today_date in f and 
+                              f.endswith('.xlsx')]
+            
+            if category_files:
+                # 오늘 날짜 파일이 이미 존재하는 경우
+                logging.info(f"✅ '{category['name']}' 카테고리는 오늘({today_date}) 이미 처리되었습니다: {category_files[0]}")
+                print(f"✅ '{category['name']}' 카테고리는 오늘 이미 처리되었습니다: {category_files[0]}")
+                
+                # 이미 생성된 파일 로드
+                existing_file = os.path.join('./cs_agent/raw_xlsx', category_files[0])
+                try:
+                    df = pd.read_excel(existing_file)
+                    category_dataframes[category['name']] = df
+                    print(f"기존 파일에서 {len(df)}개 제품 데이터를 로드했습니다.")
+                    logging.info(f"기존 파일에서 {len(df)}개 제품 데이터를 로드했습니다.")
+                except Exception as e:
+                    logging.error(f"기존 파일 로드 중 오류: {str(e)}")
+                
+                continue  # 다음 카테고리로 진행
             
             try:
                 df = check_category_products(session, category)

@@ -4,19 +4,117 @@ import json
 import os
 
 # 엑셀 파일 로드 (파일 존재 여부 확인)
-cpu = pd.read_excel("./CPU.xlsx")
-motherboard = pd.read_excel("./Motherboard.xlsx")
-memory = pd.read_excel("./Memory.xlsx")
-case = pd.read_excel("./Case.xlsx")
-gpu = pd.read_excel("./GPU.xlsx")
-power = pd.read_excel("./PowerSupply.xlsx")
-storage = pd.read_excel("./Storage.xlsx")
+raw_xlsx_dir = "./cs_agent/raw_xlsx/"
 
-# CPU 쿨러 파일 존재 여부 확인 후 로드
-if os.path.exists("./CPUCooler.xlsx"):
-    cooler = pd.read_excel("./CPUCooler.xlsx")
+# 파일 패턴으로 가장 최신 파일 찾기 함수
+def find_latest_file(directory, prefix):
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith('.xlsx')]
+    if not files:
+        return None
+    return max(files)  # 파일명 기준으로 가장 최신 파일 반환
+
+# CPU 파일 로드
+cpu_file = find_latest_file(raw_xlsx_dir, "CPU_")
+if cpu_file:
+    try:
+        cpu = pd.read_excel(f"{raw_xlsx_dir}{cpu_file}")
+        print(f"CPU 파일 로드: {cpu_file}")
+    except Exception as e:
+        print(f"CPU 파일 로드 중 오류 발생: {e}")
+        cpu = pd.DataFrame()
 else:
-    print("경고: CPUCooler.xlsx 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    print("경고: CPU 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    cpu = pd.DataFrame()
+
+# 메인보드 파일 로드
+mb_file = find_latest_file(raw_xlsx_dir, "Mainboard_")
+if mb_file:
+    try:
+        motherboard = pd.read_excel(f"{raw_xlsx_dir}{mb_file}")
+        print(f"메인보드 파일 로드: {mb_file}")
+    except Exception as e:
+        print(f"메인보드 파일 로드 중 오류 발생: {e}")
+        motherboard = pd.DataFrame()
+else:
+    print("경고: 메인보드 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    motherboard = pd.DataFrame()
+
+# 메모리 파일 로드
+memory_file = find_latest_file(raw_xlsx_dir, "Memory_")
+if memory_file:
+    try:
+        memory = pd.read_excel(f"{raw_xlsx_dir}{memory_file}")
+        print(f"메모리 파일 로드: {memory_file}")
+    except Exception as e:
+        print(f"메모리 파일 로드 중 오류 발생: {e}")
+        memory = pd.DataFrame()
+else:
+    print("경고: 메모리 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    memory = pd.DataFrame()
+
+# 케이스 파일 로드
+case_file = find_latest_file(raw_xlsx_dir, "Case_")
+if case_file:
+    try:
+        case = pd.read_excel(f"{raw_xlsx_dir}{case_file}")
+        print(f"케이스 파일 로드: {case_file}")
+    except Exception as e:
+        print(f"케이스 파일 로드 중 오류 발생: {e}")
+        case = pd.DataFrame()
+else:
+    print("경고: 케이스 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    case = pd.DataFrame()
+
+# GPU 파일 로드
+gpu_file = find_latest_file(raw_xlsx_dir, "VGA_")
+if gpu_file:
+    try:
+        gpu = pd.read_excel(f"{raw_xlsx_dir}{gpu_file}")
+        print(f"GPU 파일 로드: {gpu_file}")
+    except Exception as e:
+        print(f"GPU 파일 로드 중 오류 발생: {e}")
+        gpu = pd.DataFrame()
+else:
+    print("경고: GPU 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    gpu = pd.DataFrame()
+
+# 파워 파일 로드
+power_file = find_latest_file(raw_xlsx_dir, "Power_")
+if power_file:
+    try:
+        power = pd.read_excel(f"{raw_xlsx_dir}{power_file}")
+        print(f"파워 파일 로드: {power_file}")
+    except Exception as e:
+        print(f"파워 파일 로드 중 오류 발생: {e}")
+        power = pd.DataFrame()
+else:
+    print("경고: 파워 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    power = pd.DataFrame()
+
+# 스토리지 파일 로드
+storage_file = find_latest_file(raw_xlsx_dir, "SSD_")
+if storage_file:
+    try:
+        storage = pd.read_excel(f"{raw_xlsx_dir}{storage_file}")
+        print(f"스토리지 파일 로드: {storage_file}")
+    except Exception as e:
+        print(f"스토리지 파일 로드 중 오류 발생: {e}")
+        storage = pd.DataFrame()
+else:
+    print("경고: 스토리지 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
+    storage = pd.DataFrame()
+
+# CPU 쿨러 파일 로드
+cooler_file = find_latest_file(raw_xlsx_dir, "CpuCooler_")
+if cooler_file:
+    try:
+        cooler = pd.read_excel(f"{raw_xlsx_dir}{cooler_file}")
+        print(f"CPU 쿨러 파일 로드: {cooler_file}")
+    except Exception as e:
+        print(f"CPU 쿨러 파일 로드 중 오류 발생: {e}")
+        cooler = pd.DataFrame()
+else:
+    print("경고: CPU 쿨러 엑셀 파일을 찾을 수 없습니다. 빈 DataFrame을 생성합니다.")
     cooler = pd.DataFrame()
 
 # JSON 파일에서 컬럼 정보 로드
@@ -38,7 +136,7 @@ if not cooler_columns and 'cpu_cooler' in columns_info:
     cooler_columns = columns_info['cpu_cooler']
 
 # DuckDB 연결 생성
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 
 # CPU 테이블 생성
 conn.execute('''
