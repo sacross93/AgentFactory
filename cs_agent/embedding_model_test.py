@@ -42,7 +42,8 @@ model_names = [
     "intfloat/multilingual-e5-large",
     "jhgan/ko-sbert-multitask",
     "BAAI/bge-m3",
-    "upskyy/bge-m3-korean"
+    "upskyy/bge-m3-korean",
+    "dragonkue/snowflake-arctic-embed-l-v2.0-ko"
     # "Alibaba-NLP/gte-Qwen2-7B-instruct"
 ]
 

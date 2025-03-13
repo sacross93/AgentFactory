@@ -5,6 +5,19 @@ import logging
 import datetime
 import math
 import re
+import os
+
+# 엑셀 파일 로드 (파일 존재 여부 확인)
+raw_xlsx_dir = "./cs_agent/raw_xlsx/"
+
+# 파일 패턴으로 가장 최신 파일 찾기 함수
+def find_latest_file(directory, prefix):
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith('.xlsx')]
+    if not files:
+        return None
+    return max(files)  # 파일명 기준으로 가장 최신 파일 반환
+
+case_file = find_latest_file(raw_xlsx_dir, "Case_")
 
 # 로그 설정
 log_filename = f"case_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -24,7 +37,7 @@ logging.getLogger('').addHandler(console)
 
 # 데이터베이스 연결
 logging.info("데이터베이스 연결 중...")
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 logging.info("데이터베이스 연결 성공")
 
 # 테이블 스키마 확인
@@ -43,7 +56,7 @@ logging.info(f"케이스 테이블 기본 키: {primary_key}")
 
 # 엑셀 파일 읽기
 logging.info("Case.xlsx 파일 읽는 중...")
-df = pd.read_excel("Case.xlsx")
+df = pd.read_excel(f"{raw_xlsx_dir}{case_file}")
 logging.info(f"엑셀 파일 읽기 완료: {len(df)}개 행 발견")
 
 # 기존 케이스 데이터 삭제
@@ -88,6 +101,7 @@ column_mapping = {
     '장착 팬 개수': 'fans_included',
     '측면': 'side_panel',
     '품명': 'product_name',
+    '제품명(전체)': 'product_name',
     '파워 포함 여부': 'power_included',
     '브랜드별 지원파워규격': 'supported_mb_types',
     'EATX': 'eatx_support',
@@ -264,9 +278,13 @@ try:
                     if db_col in ['width', 'height', 'depth'] and isinstance(value, str):
                         value = extract_dimension(value)
                     
-                    data[db_col] = value
+                    # 제품명(전체)가 있는 경우 product_name에 우선적으로 사용
+                    if excel_col == '제품명(전체)' and value is not None:
+                        data['product_name'] = value
+                    elif excel_col != '제품명(전체)' or db_col != 'product_name' or '제품명(전체)' not in df.columns:
+                        data[db_col] = value
             
-            # 품명을 모델명으로 사용
+            # product_name을 model_name으로 사용
             if 'product_name' in data and 'model_name' not in data:
                 data['model_name'] = data['product_name']
             

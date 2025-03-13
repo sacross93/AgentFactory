@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 import os
 import numpy as np
+import re
 
 # 로깅 설정
 log_filename = f'compatibility_update_{datetime.now().strftime("%Y%m%d")}.log'
@@ -14,7 +15,7 @@ logging.basicConfig(
 )
 
 # 데이터베이스 연결
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 
 # 마지막 업데이트 시간 저장 파일
 LAST_UPDATE_FILE = 'last_compatibility_update.txt'
@@ -108,6 +109,146 @@ def get_column_names(df, expected_columns):
     
     return actual_columns
 
+# 데이터 전처리 및 정규화 함수들
+def normalize_socket_type(socket_str):
+    """소켓 타입 문자열을 정규화하여 일관성 있게 만듭니다."""
+    if socket_str is None or pd.isna(socket_str):
+        return ""
+    
+    socket_str = str(socket_str).strip().upper()
+    
+    # 공백 제거 및 일관성 있는 형식으로 변환
+    socket_str = socket_str.replace(" ", "")
+    
+    # LGA 소켓 정규화
+    if "LGA" in socket_str:
+        # LGA1700, LGA 1700 등을 LGA1700으로 통일
+        socket_str = re.sub(r'LGA\s*(\d+)', r'LGA\1', socket_str)
+    
+    # AM4, AM 4 등을 AM4로 통일
+    if "AM" in socket_str:
+        socket_str = re.sub(r'AM\s*(\d+)', r'AM\1', socket_str)
+    
+    return socket_str
+
+def normalize_form_factor(form_str):
+    """폼팩터 문자열을 정규화합니다."""
+    if form_str is None or pd.isna(form_str):
+        return ""
+    
+    form_str = str(form_str).strip().upper()
+    
+    # 공백 및 하이픈 처리
+    normalized = form_str.replace(" ", "").replace("-", "")
+    
+    # 일반적인 폼팩터 정규화
+    mapping = {
+        "MATX": "MICROATX",
+        "MICRO-ATX": "MICROATX",
+        "MICRO ATX": "MICROATX",
+        "M-ATX": "MICROATX",
+        "ITX": "MINIITX",
+        "MINI-ITX": "MINIITX",
+        "MINI ITX": "MINIITX",
+        "EATX": "EXTENDEDATX",
+        "E-ATX": "EXTENDEDATX",
+        "EXTENDED ATX": "EXTENDEDATX",
+        "EXTENDED-ATX": "EXTENDEDATX"
+    }
+    
+    for key, value in mapping.items():
+        if key in normalized:
+            return value
+    
+    # ATX는 그대로 유지
+    if "ATX" in normalized and not any(k in normalized for k in mapping.keys()):
+        return "ATX"
+    
+    return normalized
+
+def convert_dimension_to_mm(dimension_str):
+    """차원 문자열(높이, 길이 등)을 밀리미터(mm) 단위로 변환합니다."""
+    if dimension_str is None or pd.isna(dimension_str):
+        return None
+    
+    try:
+        # 숫자만 추출
+        dimension_str = str(dimension_str).strip().lower()
+        num_match = re.search(r'(\d+(\.\d+)?)', dimension_str)
+        
+        if not num_match:
+            return None
+        
+        value = float(num_match.group(1))
+        
+        # 단위 확인 및 변환
+        if 'cm' in dimension_str:
+            return value * 10  # cm -> mm
+        elif 'in' in dimension_str or 'inch' in dimension_str:
+            return value * 25.4  # inch -> mm
+        elif 'mm' in dimension_str:
+            return value  # 이미 mm
+        else:
+            # 단위가 명시되지 않은 경우 기본적으로 mm로 가정
+            return value
+    except (ValueError, TypeError):
+        logging.warning(f"차원 변환 실패: {dimension_str}")
+        return None
+
+def normalize_power_rating(power_str):
+    """전력 문자열을 와트(W) 단위로 변환합니다."""
+    if power_str is None or pd.isna(power_str):
+        return None
+    
+    try:
+        # 숫자만 추출
+        power_str = str(power_str).strip().lower()
+        num_match = re.search(r'(\d+(\.\d+)?)', power_str)
+        
+        if not num_match:
+            return None
+        
+        value = float(num_match.group(1))
+        
+        # 단위 확인
+        if 'kw' in power_str:
+            return value * 1000  # kW -> W
+        else:
+            # 단위가 없거나 W인 경우
+            return value
+    except (ValueError, TypeError):
+        logging.warning(f"전력 변환 실패: {power_str}")
+        return None
+
+# 호환성 판단 함수 개선
+def is_compatible_socket(cpu_socket, mb_socket):
+    """CPU 소켓과 메인보드 소켓의 호환성을 판단합니다."""
+    if not cpu_socket or not mb_socket:
+        return False, "소켓 정보 부족"
+    
+    cpu_socket = normalize_socket_type(cpu_socket)
+    mb_socket = normalize_socket_type(mb_socket)
+    
+    if cpu_socket == mb_socket:
+        return True, "소켓 일치"
+    
+    # 소켓 패밀리 호환성 (예: LGA1200과 LGA1155 등)
+    socket_compatibility = {
+        "LGA1700": ["LGA1700"],
+        "LGA1200": ["LGA1200", "LGA1151", "LGA1150"],
+        "LGA1151": ["LGA1151", "LGA1150", "LGA1155"],
+        "LGA1150": ["LGA1150", "LGA1155", "LGA1156"],
+        "LGA1155": ["LGA1155", "LGA1156"],
+        "LGA2066": ["LGA2066"],
+        "AM4": ["AM4"],
+        "AM5": ["AM5"]
+    }
+    
+    if cpu_socket in socket_compatibility and mb_socket in socket_compatibility.get(cpu_socket, []):
+        return True, "소켓 패밀리 호환"
+    
+    return False, "소켓 불일치"
+
 # 1. CPU와 메인보드 호환성 (소켓 타입 기준)
 def update_cpu_mb_compatibility():
     if not check_if_update_needed("cpu_mb_compatibility", ["cpu", "motherboard"]):
@@ -137,21 +278,40 @@ def update_cpu_mb_compatibility():
     
     for cpu_id, cpu_socket in zip(cpus[cpu_cols['cpu_id']], cpus[cpu_cols['socket_type']]):
         for mb_id, mb_socket in zip(motherboards[mb_cols['mb_id']], motherboards[mb_cols['socket_type']]):
-            # 소켓 타입이 일치하면 호환됨
-            compatible = 1 if cpu_socket == mb_socket else 0
+            is_compatible, reason = is_compatible_socket(cpu_socket, mb_socket)
+            
             compatibility_data.append({
                 'id': len(compatibility_data) + 1,
                 'cpu_id': cpu_id,
                 'mb_id': mb_id,
-                'compatible': compatible
+                'compatible': 1 if is_compatible else 0,
+                'reason': reason  # 호환성 이유 저장
             })
     
-    # 데이터프레임 생성 및 저장
     if compatibility_data:
+        # 테이블 스키마 확인 및 필요시 ALTER TABLE
+        columns = conn.execute("PRAGMA table_info(cpu_mb_compatibility)").fetchall()
+        column_names = [col[1] for col in columns]
+        
+        # reason 컬럼이 없으면 추가
+        if 'reason' not in column_names:
+            conn.execute("ALTER TABLE cpu_mb_compatibility ADD COLUMN reason TEXT")
+            logging.info("cpu_mb_compatibility 테이블에 reason 컬럼 추가 완료")
+        
         df = pd.DataFrame(compatibility_data)
-        conn.execute("DELETE FROM cpu_mb_compatibility")
-        conn.execute("INSERT INTO cpu_mb_compatibility SELECT * FROM df")
-        logging.info(f"CPU-메인보드 호환성 테이블 업데이트 완료: {len(df)}개 항목")
+        
+        # 기존 데이터 삭제 대신 증분 업데이트 (예시)
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            # 기존 데이터 삭제
+            conn.execute("DELETE FROM cpu_mb_compatibility")
+            # 새 데이터 삽입
+            conn.execute("INSERT INTO cpu_mb_compatibility SELECT * FROM df")
+            conn.execute("COMMIT")
+            logging.info(f"CPU-메인보드 호환성 테이블 업데이트 완료: {len(df)}개 항목")
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            logging.error(f"CPU-메인보드 호환성 업데이트 오류: {e}")
     else:
         logging.warning("CPU-메인보드 호환성 데이터가 없습니다.")
 
@@ -416,11 +576,11 @@ def update_gpu_case_compatibility():
     
     # 컬럼 이름 확인
     gpu_cols = get_column_names(gpus, ['gpu_id', 'length'])
-    case_cols = get_column_names(cases, ['case_id', 'gpu_length', 'max_gpu_length', 'graphics_card_length'])
+    case_cols = get_column_names(cases, ['case_id', 'vga_length'])
     
     # ID 컬럼 이름이 다를 수 있음
     if gpu_cols['gpu_id'] is None:
-        for possible_id in ['id', 'graphics_card_id']:
+        for possible_id in ['id', 'vga_id']:
             if possible_id in gpus.columns:
                 gpu_cols['gpu_id'] = possible_id
                 break
@@ -431,45 +591,29 @@ def update_gpu_case_compatibility():
                 case_cols['case_id'] = possible_id
                 break
     
-    # 케이스 GPU 길이 컬럼 찾기 (여러 가능한 이름 중 하나)
-    gpu_length_col = None
-    for col_name in ['gpu_length', 'max_gpu_length', 'graphics_card_length', 'max_graphics_card_length']:
-        if col_name in cases.columns:
-            gpu_length_col = col_name
-            break
+    # GPU 길이 컬럼이 다를 수 있음
+    if case_cols['vga_length'] is None:
+        for possible_col in ['gpu_length', 'max_gpu_length', 'max_vga_length', 'graphics_card_length']:
+            if possible_col in cases.columns:
+                case_cols['vga_length'] = possible_col
+                break
     
     # 필요한 컬럼이 없으면 건너뛰기
-    if gpu_cols['gpu_id'] is None or case_cols['case_id'] is None or gpu_length_col is None:
-        logging.warning(f"GPU 또는 케이스 테이블에 필요한 컬럼이 없습니다. GPU ID: {gpu_cols['gpu_id']}, 케이스 ID: {case_cols['case_id']}, GPU 길이 컬럼: {gpu_length_col}")
-        # 데이터가 없어도 기본 호환성 정보 생성
-        compatibility_data = []
-        for gpu_id in gpus[gpu_cols['gpu_id']]:
-            for case_id in cases[case_cols['case_id']]:
-                compatibility_data.append({
-                    'id': len(compatibility_data) + 1,
-                    'gpu_id': gpu_id,
-                    'case_id': case_id,
-                    'compatible': 1  # 기본적으로 호환된다고 가정
-                })
-        
-        if compatibility_data:
-            df = pd.DataFrame(compatibility_data)
-            conn.execute("DELETE FROM gpu_case_compatibility")
-            conn.execute("INSERT INTO gpu_case_compatibility SELECT * FROM df")
-            logging.info(f"GPU-케이스 호환성 테이블 업데이트 완료 (기본 호환성): {len(df)}개 항목")
+    if None in gpu_cols.values() or None in case_cols.values():
+        logging.warning(f"GPU 또는 케이스 테이블에 필요한 컬럼이 없습니다. GPU 컬럼: {gpu_cols}, 케이스 컬럼: {case_cols}")
         return
     
     compatibility_data = []
     
-    for gpu_id, gpu_length in zip(gpus[gpu_cols['gpu_id']], gpus.get(gpu_cols['length'], [None] * len(gpus))):
-        for case_id, case_gpu_length in zip(cases[case_cols['case_id']], cases[gpu_length_col]):
-            compatible = 1  # 기본적으로 호환된다고 가정
+    for gpu_id, gpu_length in zip(gpus[gpu_cols['gpu_id']], gpus[gpu_cols['length']]):
+        for case_id, case_vga_length in zip(cases[case_cols['case_id']], cases[case_cols['vga_length']]):
+            compatible = 0
             
             # 둘 다 숫자 값이 있는 경우에만 비교
-            if gpu_length is not None and case_gpu_length is not None:
+            if gpu_length is not None and case_vga_length is not None:
                 try:
-                    if float(gpu_length) > float(case_gpu_length):
-                        compatible = 0
+                    if float(gpu_length) <= float(case_vga_length):
+                        compatible = 1
                 except (ValueError, TypeError):
                     pass
             
@@ -481,6 +625,22 @@ def update_gpu_case_compatibility():
             })
     
     if compatibility_data:
+        # GPU-케이스 호환성 테이블이 없는 경우 생성
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS gpu_case_compatibility (
+                    id INTEGER PRIMARY KEY,
+                    gpu_id INTEGER,
+                    case_id INTEGER,
+                    compatible BOOLEAN,
+                    FOREIGN KEY (gpu_id) REFERENCES gpu (gpu_id),
+                    FOREIGN KEY (case_id) REFERENCES case_chassis (case_id)
+                )
+            """)
+            logging.info("GPU-케이스 호환성 테이블 생성 완료")
+        except Exception as e:
+            logging.warning(f"GPU-케이스 호환성 테이블 생성 중 오류: {e}")
+        
         df = pd.DataFrame(compatibility_data)
         conn.execute("DELETE FROM gpu_case_compatibility")
         conn.execute("INSERT INTO gpu_case_compatibility SELECT * FROM df")
@@ -488,196 +648,88 @@ def update_gpu_case_compatibility():
     else:
         logging.warning("GPU-케이스 호환성 데이터가 없습니다.")
 
-# 7. GPU와 PSU 호환성 (GPU 전력 요구사항과 PSU 출력 기준)
-def update_gpu_psu_compatibility():
-    if not check_if_update_needed("gpu_psu_compatibility", ["gpu", "power_supply"]):
+# 7. PSU와 케이스 호환성 (PSU 폼팩터와 케이스 지원 폼팩터 기준)
+def update_psu_case_compatibility():
+    if not check_if_update_needed("psu_case_compatibility", ["power_supply", "case_chassis"]):
         return
         
-    if gpus.empty or psus.empty:
-        logging.warning("GPU 또는 PSU 데이터가 없어 호환성 업데이트를 건너뜁니다.")
+    if psus.empty or cases.empty:
+        logging.warning("PSU 또는 케이스 데이터가 없어 호환성 업데이트를 건너뜁니다.")
         return
     
     # 컬럼 이름 확인
-    gpu_cols = get_column_names(gpus, ['gpu_id', 'power_consumption'])
-    psu_cols = get_column_names(psus, ['psu_id', 'wattage'])
+    psu_cols = get_column_names(psus, ['psu_id', 'form_factor'])
+    case_cols = get_column_names(cases, ['case_id', 'power_supply_type'])
     
     # ID 컬럼 이름이 다를 수 있음
-    if gpu_cols['gpu_id'] is None:
-        for possible_id in ['id', 'graphics_card_id']:
-            if possible_id in gpus.columns:
-                gpu_cols['gpu_id'] = possible_id
-                break
-                
     if psu_cols['psu_id'] is None:
-        for possible_id in ['power_supply_id', 'id']:
+        for possible_id in ['id', 'power_id', 'power_supply_id']:
             if possible_id in psus.columns:
                 psu_cols['psu_id'] = possible_id
                 break
-    
-    # 전력 소비량 컬럼이 다를 수 있음
-    if gpu_cols['power_consumption'] is None:
-        for possible_col in ['tdp', 'power_usage', 'power_requirement']:
-            if possible_col in gpus.columns:
-                gpu_cols['power_consumption'] = possible_col
+                
+    if case_cols['case_id'] is None:
+        for possible_id in ['case_chassis_id', 'id', 'chassis_id']:
+            if possible_id in cases.columns:
+                case_cols['case_id'] = possible_id
                 break
     
     # 필요한 컬럼이 없으면 건너뛰기
-    if None in gpu_cols.values() or None in psu_cols.values():
-        logging.warning(f"GPU 또는 PSU 테이블에 필요한 컬럼이 없습니다. GPU 컬럼: {gpu_cols}, PSU 컬럼: {psu_cols}")
+    if None in psu_cols.values() or None in case_cols.values():
+        logging.warning(f"PSU 또는 케이스 테이블에 필요한 컬럼이 없습니다. PSU 컬럼: {psu_cols}, 케이스 컬럼: {case_cols}")
         return
     
     compatibility_data = []
     
-    for gpu_id, gpu_power in zip(gpus[gpu_cols['gpu_id']], gpus[gpu_cols['power_consumption']]):
-        for psu_id, psu_wattage in zip(psus[psu_cols['psu_id']], psus[psu_cols['wattage']]):
+    for psu_id, psu_form_factor in zip(psus[psu_cols['psu_id']], psus[psu_cols['form_factor']]):
+        for case_id, case_psu_support in zip(cases[case_cols['case_id']], cases[case_cols['power_supply_type']]):
             compatible = 0
             
-            # GPU 전력 소비량이 있고 PSU 와트가 있는 경우
-            if gpu_power is not None and psu_wattage is not None:
+            # PSU 폼팩터가 케이스 지원 타입에 포함되어 있으면 호환됨
+            if psu_form_factor is not None and case_psu_support is not None:
                 try:
-                    # PSU 와트가 GPU 전력 소비량의 1.5배 이상이면 호환됨 (여유 있게)
-                    if float(psu_wattage) >= float(gpu_power) * 1.5:
+                    psu_form_lower = str(psu_form_factor).lower()
+                    case_support_lower = str(case_psu_support).lower()
+                    
+                    # ATX PSU는 대부분의 케이스와 호환됨
+                    if 'atx' in psu_form_lower and 'atx' in case_support_lower:
+                        compatible = 1
+                    # SFX PSU는 SFX 지원 케이스와만 호환됨
+                    elif 'sfx' in psu_form_lower and 'sfx' in case_support_lower:
                         compatible = 1
                 except (ValueError, TypeError):
                     pass
-            else:
-                # 데이터가 없는 경우 기본적으로 호환된다고 가정
-                compatible = 1
             
             compatibility_data.append({
                 'id': len(compatibility_data) + 1,
-                'gpu_id': gpu_id,
                 'psu_id': psu_id,
+                'case_id': case_id,
                 'compatible': compatible
             })
     
     if compatibility_data:
-        df = pd.DataFrame(compatibility_data)
-        conn.execute("DELETE FROM gpu_psu_compatibility")
-        conn.execute("INSERT INTO gpu_psu_compatibility SELECT * FROM df")
-        logging.info(f"GPU-PSU 호환성 테이블 업데이트 완료: {len(df)}개 항목")
-    else:
-        logging.warning("GPU-PSU 호환성 데이터가 없습니다.")
-
-# 8. 메인보드와 저장장치 호환성 (인터페이스 기준)
-def update_mb_storage_compatibility():
-    if not check_if_update_needed("mb_storage_compatibility", ["motherboard", "storage"]):
-        return
+        # PSU-케이스 호환성 테이블이 없는 경우 생성
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS psu_case_compatibility (
+                    id INTEGER PRIMARY KEY,
+                    psu_id INTEGER,
+                    case_id INTEGER,
+                    compatible BOOLEAN,
+                    FOREIGN KEY (psu_id) REFERENCES power_supply (psu_id),
+                    FOREIGN KEY (case_id) REFERENCES case_chassis (case_id)
+                )
+            """)
+            logging.info("PSU-케이스 호환성 테이블 생성 완료")
+        except Exception as e:
+            logging.warning(f"PSU-케이스 호환성 테이블 생성 중 오류: {e}")
         
-    if motherboards.empty or storages.empty:
-        logging.warning("메인보드 또는 저장장치 데이터가 없어 호환성 업데이트를 건너뜁니다.")
-        return
-    
-    # 컬럼 이름 확인
-    mb_cols = get_column_names(motherboards, ['mb_id', 'm2_slots', 'sata_ports'])
-    storage_cols = get_column_names(storages, ['storage_id', 'interface'])
-    
-    # ID 컬럼 이름이 다를 수 있음
-    if mb_cols['mb_id'] is None:
-        for possible_id in ['motherboard_id', 'id', 'mainboard_id']:
-            if possible_id in motherboards.columns:
-                mb_cols['mb_id'] = possible_id
-                break
-                
-    if storage_cols['storage_id'] is None:
-        for possible_id in ['id', 'drive_id']:
-            if possible_id in storages.columns:
-                storage_cols['storage_id'] = possible_id
-                break
-    
-    # 필요한 컬럼이 없으면 건너뛰기
-    if mb_cols['mb_id'] is None or storage_cols['storage_id'] is None:
-        logging.warning(f"메인보드 또는 저장장치 테이블에 필요한 ID 컬럼이 없습니다. MB 컬럼: {mb_cols}, 저장장치 컬럼: {storage_cols}")
-        return
-    
-    compatibility_data = []
-    
-    for mb_id in motherboards[mb_cols['mb_id']]:
-        for storage_id, interface in zip(storages[storage_cols['storage_id']], 
-                                         storages.get(storage_cols['interface'], [None] * len(storages))):
-            compatible = 1  # 기본적으로 호환된다고 가정
-            
-            compatibility_data.append({
-                'id': len(compatibility_data) + 1,
-                'mb_id': mb_id,
-                'storage_id': storage_id,
-                'compatible': compatible
-            })
-    
-    if compatibility_data:
         df = pd.DataFrame(compatibility_data)
-        conn.execute("DELETE FROM mb_storage_compatibility")
-        conn.execute("INSERT INTO mb_storage_compatibility SELECT * FROM df")
-        logging.info(f"메인보드-저장장치 호환성 테이블 업데이트 완료: {len(df)}개 항목")
+        conn.execute("DELETE FROM psu_case_compatibility")
+        conn.execute("INSERT INTO psu_case_compatibility SELECT * FROM df")
+        logging.info(f"PSU-케이스 호환성 테이블 업데이트 완료: {len(df)}개 항목")
     else:
-        logging.warning("메인보드-저장장치 호환성 데이터가 없습니다.")
-
-# 9. 메인보드와 GPU 호환성 (PCIe 버전 기준) - 테이블 생성 및 업데이트
-def update_mb_gpu_compatibility():
-    # 테이블이 존재하는지 확인
-    try:
-        conn.execute("SELECT COUNT(*) FROM mb_gpu_compatibility")
-    except:
-        logging.info("mb_gpu_compatibility 테이블이 존재하지 않아 생성합니다.")
-        conn.execute("""
-            CREATE TABLE mb_gpu_compatibility (
-                id INTEGER PRIMARY KEY,
-                mb_id INTEGER,
-                gpu_id INTEGER,
-                compatible INTEGER
-            )
-        """)
-    
-    if not check_if_update_needed("mb_gpu_compatibility", ["motherboard", "gpu"]):
-        return
-        
-    if motherboards.empty or gpus.empty:
-        logging.warning("메인보드 또는 GPU 데이터가 없어 호환성 업데이트를 건너뜁니다.")
-        return
-    
-    # 컬럼 이름 확인
-    mb_cols = get_column_names(motherboards, ['mb_id', 'pcie_version'])
-    gpu_cols = get_column_names(gpus, ['gpu_id', 'pcie_version'])
-    
-    # ID 컬럼 이름이 다를 수 있음
-    if mb_cols['mb_id'] is None:
-        for possible_id in ['motherboard_id', 'id', 'mainboard_id']:
-            if possible_id in motherboards.columns:
-                mb_cols['mb_id'] = possible_id
-                break
-                
-    if gpu_cols['gpu_id'] is None:
-        for possible_id in ['id', 'graphics_card_id']:
-            if possible_id in gpus.columns:
-                gpu_cols['gpu_id'] = possible_id
-                break
-    
-    # 필요한 ID 컬럼이 없으면 건너뛰기
-    if mb_cols['mb_id'] is None or gpu_cols['gpu_id'] is None:
-        logging.warning(f"메인보드 또는 GPU 테이블에 필요한 ID 컬럼이 없습니다. MB 컬럼: {mb_cols}, GPU 컬럼: {gpu_cols}")
-        return
-    
-    compatibility_data = []
-    
-    for mb_id in motherboards[mb_cols['mb_id']]:
-        for gpu_id in gpus[gpu_cols['gpu_id']]:
-            # 기본적으로 호환됨 (대부분의 메인보드와 GPU는 호환됨)
-            compatible = 1
-            
-            compatibility_data.append({
-                'id': len(compatibility_data) + 1,
-                'mb_id': mb_id,
-                'gpu_id': gpu_id,
-                'compatible': compatible
-            })
-    
-    if compatibility_data:
-        df = pd.DataFrame(compatibility_data)
-        conn.execute("DELETE FROM mb_gpu_compatibility")
-        conn.execute("INSERT INTO mb_gpu_compatibility SELECT * FROM df")
-        logging.info(f"메인보드-GPU 호환성 테이블 업데이트 완료: {len(df)}개 항목")
-    else:
-        logging.warning("메인보드-GPU 호환성 데이터가 없습니다.")
+        logging.warning("PSU-케이스 호환성 데이터가 없습니다.")
 
 # 10. 시스템 호환성 (전체 시스템 호환성 종합)
 def update_system_compatibility():
@@ -722,19 +774,9 @@ def update_all_compatibility_tables():
         logging.error(f"GPU-케이스 호환성 업데이트 중 오류: {e}")
     
     try:
-        update_gpu_psu_compatibility()
+        update_psu_case_compatibility()
     except Exception as e:
-        logging.error(f"GPU-PSU 호환성 업데이트 중 오류: {e}")
-    
-    try:
-        update_mb_storage_compatibility()
-    except Exception as e:
-        logging.error(f"메인보드-저장장치 호환성 업데이트 중 오류: {e}")
-    
-    try:
-        update_mb_gpu_compatibility()
-    except Exception as e:
-        logging.error(f"메인보드-GPU 호환성 업데이트 중 오류: {e}")
+        logging.error(f"PSU-케이스 호환성 업데이트 중 오류: {e}")
     
     # 마지막 업데이트 시간 저장
     save_last_update_time()

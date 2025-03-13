@@ -3,6 +3,17 @@ import pandas as pd
 import numpy as np
 import logging
 import datetime
+import os
+
+raw_xlsx_dir = "./cs_agent/raw_xlsx/"
+
+def find_latest_file(directory, prefix):
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith('.xlsx')]
+    if not files:
+        return None
+    return max(files)
+
+cpu_file = find_latest_file(raw_xlsx_dir, "CPU_")
 
 # 로그 설정
 log_filename = f"cpu_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -22,7 +33,7 @@ logging.getLogger('').addHandler(console)
 
 # 데이터베이스 연결
 logging.info("데이터베이스 연결 중...")
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 logging.info("데이터베이스 연결 성공")
 
 # 기존 CPU 데이터 삭제
@@ -32,7 +43,7 @@ logging.info("기존 CPU 데이터 삭제 완료")
 
 # CPU 데이터 로드
 logging.info("CPU 엑셀 파일 로드 중...")
-cpu = pd.read_excel("CPU.xlsx")
+cpu = pd.read_excel(f"{raw_xlsx_dir}{cpu_file}")
 logging.info(f"CPU 엑셀 파일 로드 완료 - {len(cpu)} 행 발견")
 
 # NaN 값을 None으로 변환하는 함수
@@ -78,6 +89,9 @@ for index, row in cpu.iterrows():
     intel_model = row['(인텔) 모델명'] if pd.notna(row['(인텔) 모델명']) and row['(인텔) 모델명'] != '-' else None
     amd_model = row['(AMD) 모델명'] if pd.notna(row['(AMD) 모델명']) and row['(AMD) 모델명'] != '-' else None
     
+    # 제품명(전체) 컬럼 데이터 가져오기
+    full_product_name = row['제품명(전체)'] if pd.notna(row['제품명(전체)']) else None
+    
     if intel_model:
         model_name = intel_model
     elif amd_model:
@@ -86,6 +100,13 @@ for index, row in cpu.iterrows():
         # 둘 다 없는 경우 제조사와 ID를 조합하여 고유한 모델명 생성
         manufacturer = row['수입/제조사'] if pd.notna(row['수입/제조사']) else "Unknown"
         model_name = f"{manufacturer}_CPU_{cpu_id}"
+    
+    # 제품명(전체)가 있으면 model_name과 product_name에 사용
+    if full_product_name:
+        model_name = full_product_name
+        product_name = full_product_name
+    else:
+        product_name = model_name
     
     try:
         # 데이터 삽입 쿼리 - 컬럼명을 명시적으로 지정
@@ -133,7 +154,7 @@ for index, row in cpu.iterrows():
             replace_nan(row.get('메모리 버스', None)),                                 # memory_bus
             extract_number(row.get('메모리 채널', None)),                              # memory_channels
             replace_nan(row.get('패키지', None)),                                      # package
-            replace_nan(row.get('품명', None)),                                        # product_name
+            product_name,                                                             # product_name
             replace_nan(row.get('KC 인증정보', None)),                                 # kc_certification
             replace_nan(row.get('정격전압', None)),                                    # rated_voltage
             replace_nan(row.get('소비전력', None)),                                    # power_consumption

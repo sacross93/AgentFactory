@@ -17,10 +17,10 @@ def find_latest_file(directory, prefix):
         return None
     return max(files)  # 파일명 기준으로 가장 최신 파일 반환
 
-gpu_file = find_latest_file(raw_xlsx_dir, "VGA_")
+cooler_file = find_latest_file(raw_xlsx_dir, "CpuCooler_")
 
 # 로그 설정
-log_filename = f"gpu_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_filename = f"cpucooler_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     filename=log_filename,
     level=logging.INFO,
@@ -41,35 +41,35 @@ conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 logging.info("데이터베이스 연결 성공")
 
 # 테이블 스키마 확인
-table_schema = conn.sql("DESCRIBE gpu").fetchall()
+table_schema = conn.sql("DESCRIBE cpu_cooler").fetchall()
 column_types = {col[0]: col[1] for col in table_schema}
-logging.info(f"GPU 테이블 스키마: {column_types}")
+logging.info(f"CPU 쿨러 테이블 스키마: {column_types}")
 
 # 테이블 구조 확인
-table_info = conn.sql("PRAGMA table_info(gpu)").fetchall()
+table_info = conn.sql("PRAGMA table_info(cpu_cooler)").fetchall()
 primary_key = None
 for col_info in table_info:
     if col_info[5]:  # 5번 인덱스는 primary key 여부
         primary_key = col_info[1]  # 1번 인덱스는 컬럼명
         break
-logging.info(f"GPU 테이블 기본 키: {primary_key}")
+logging.info(f"CPU 쿨러 테이블 기본 키: {primary_key}")
 
 # 엑셀 파일 읽기
-logging.info("GPU.xlsx 파일 읽는 중...")
-df = pd.read_excel(f"{raw_xlsx_dir}{gpu_file}")
+logging.info("CPU 쿨러 엑셀 파일 읽는 중...")
+df = pd.read_excel(f"{raw_xlsx_dir}{cooler_file}")
 logging.info(f"엑셀 파일 읽기 완료: {len(df)}개 행 발견")
 
-# 기존 GPU 데이터 삭제
-logging.info("기존 GPU 데이터 삭제 중...")
-conn.execute("DELETE FROM gpu")
-logging.info("기존 GPU 데이터 삭제 완료")
+# 기존 CPU 쿨러 데이터 삭제
+logging.info("기존 CPU 쿨러 데이터 삭제 중...")
+conn.execute("DELETE FROM cpu_cooler")
+logging.info("기존 CPU 쿨러 데이터 삭제 완료")
 
 # 시퀀스 초기화 (DuckDB에서 지원하는 경우)
 try:
-    conn.execute("ALTER SEQUENCE gpu_gpu_id_seq RESTART WITH 1")
-    logging.info("GPU ID 시퀀스 초기화 완료")
+    conn.execute("ALTER SEQUENCE cpu_cooler_cooler_id_seq RESTART WITH 1")
+    logging.info("CPU 쿨러 ID 시퀀스 초기화 완료")
 except:
-    logging.warning("GPU ID 시퀀스 초기화 실패 (시퀀스가 없거나 지원되지 않음)")
+    logging.warning("CPU 쿨러 ID 시퀀스 초기화 실패 (시퀀스가 없거나 지원되지 않음)")
 
 # 데이터 전처리
 logging.info("데이터 전처리 중...")
@@ -79,7 +79,7 @@ df = df.replace({np.nan: None})
 df = df.replace({float('nan'): None})
 df = df.replace({math.nan: None})
 
-# 숫자 추출 함수 (클럭, 용량 등에 사용)
+# 숫자 추출 함수
 def extract_number(value):
     if value is None:
         return None
@@ -143,107 +143,108 @@ def convert_to_bool(value):
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
-        if value.lower() in ['true', 'yes', '1', 'y', '예', '지원', 'o']:
+        value = value.lower().strip()
+        if value in ['y', 'yes', '예', '지원', '있음', 'o', 'true', 't', '1']:
             return True
-        if value.lower() in ['false', 'no', '0', 'n', '아니오', '미지원', 'x', '-']:
+        elif value in ['n', 'no', '아니오', '미지원', '없음', 'x', 'false', 'f', '0', '-']:
             return False
     return None
 
+# 소켓 지원 정보 처리 함수
+def process_socket_support(row, socket_columns):
+    supported_sockets = []
+    for socket in socket_columns:
+        if socket in row and row[socket] is not None:
+            if convert_to_bool(row[socket]):
+                # 컬럼명에서 'LGA' 또는 'AM' 등의 소켓 이름만 추출
+                socket_name = socket
+                supported_sockets.append(socket_name)
+    
+    return ', '.join(supported_sockets) if supported_sockets else None
+
 # 컬럼 매핑 정의
 column_mapping = {
-    '수입/제조사': 'manufacturer',
-    '칩셋': 'chipset_manufacturer',
-    '분류': 'gpu_type',
-    '칩셋모델': 'chipset',
-    '기본 클럭': 'core_clock',
-    '부스트 클럭': 'memory_clock',
-    '메모리용량': 'memory_capacity',
-    '종류': 'memory_type',
-    '버스': 'memory_bus',
-    '쿠다프로세서': 'cuda_cores',
-    '스트림프로세서(AMD)': 'stream_processors',
-    'RT 코어': 'rt_cores',
-    '텐서 코어': 'tensor_cores',
-    '장착 인터페이스': 'interface',
-    'HDMI': 'hdmi',
-    'DP': 'display_port',
-    'DVI': 'dvi',
-    'D-SUB': 'vga',
-    '전원 커넥터': 'power_pin',
-    '소비전력': 'power_consumption',
-    '권장 파워': 'recommended_psu',
-    '냉각 방식': 'cooling_type',
-    '팬 개수': 'cooling_fan',
-    '길이': 'length',
-    '너비': 'width',
-    '높이': 'height',
-    '백플레이트': 'backplate',
-    'LED': 'led',
-    'RGB': 'rgb',
-    'AURA SYNC': 'aura_sync',
-    'MYSTIC LIGHT': 'mystic_light',
-    'RGB FUSION': 'rgb_fusion',
-    'POLYCHROME SYNC': 'polychrome_sync',
-    'TT RGB PLUS': 'tt_rgb_plus',
-    'RAZER CHROMA': 'razer_chroma',
-    'DirectX': 'directx',
-    'OpenGL': 'opengl',
-    'OpenCL': 'opencl',
-    'Vulkan': 'vulkan',
-    'CUDA': 'cuda',
-    'PhysX': 'physx',
-    'SLI/CrossFire': 'sli_crossfire',
-    'VR Ready': 'vr_ready',
-    'DLSS': 'dlss',
-    'Ray Tracing': 'ray_tracing',
-    'HDCP': 'hdcp',
-    '멀티 모니터': 'multi_monitor',
-    '품명': 'product_name',
     '제품명(전체)': 'product_name',
+    '수입/제조사': 'manufacturer',
+    '쿨러 종류': 'cooler_type',
+    '냉각방식': 'cooler_type',
+    '히트파이프': 'key_features',
+    '전원단자': 'fan_connector',
+    '높이': 'height',
+    '팬 크기': 'fan_size',
+    '팬 개수': 'fan_count',
+    '최대 팬속도': 'fan_speed',
+    '최대 풍량': 'key_features',
+    '팬 두께': 'key_features',
+    'TDP': 'tdp_support',
+    '제품명(전체)': 'product_name',
+    '제품명(전체)': 'model_name',
     'KC 인증정보': 'kc_certification',
     '정격전압': 'rated_voltage',
+    '소비전력': 'power_consumption',
     '에너지소비효율등급': 'energy_efficiency',
-    '인증': 'certification',
+    '법에 의한 인증, 허가 등을 받았음을 확인할 수 있는 경우 그에 대한 사항': 'certification',
     '동일모델의 출시년월': 'release_date',
     '제조자,수입품의 경우 수입자를 함께 표기': 'manufacturer_importer',
-    '원산지': 'origin',
-    '제조자': 'manufacturer_info',
+    '제조국 또는 원산지': 'origin',
+    '제조사/수입품의 경우 수입자를 함께 표기': 'manufacturer_info',
     '제조국': 'country_of_origin',
     'A/S 책임자': 'as_manager',
-    '고객상담': 'customer_service',
+    '소비자상담 관련 전화번호': 'customer_service',
     'A/S 책임자와 전화번호': 'as_contact',
     '크기': 'size',
     '무게': 'weight',
     '주요사항': 'key_features',
-    '품질보증기준': 'warranty'
+    '품질보증기준': 'warranty',
+    'A/S기간': 'warranty',
+    'LED 라이트': 'rgb',
+    'LED라이트': 'rgb',
+    'RGB LED': 'rgb',
+    'LED시스템': 'rgb',
+    'AURA SYNC': 'aura_sync',
+    'MYSTIC LIGHT': 'mystic_light',
+    'RGB FUSION': 'rgb_fusion',
+    'POLYCHROME': 'polychrome_sync',
+    'CHROMA': 'razer_chroma',
+    'TT RGB PLUS': 'tt_rgb_plus',
+    '베어링 타입': 'bearing_type',
+    'PWM': 'fan_pwm',
+    '컨넥터': 'fan_connector',
+    '수랭팬개수': 'fan_count',
+    '워터블록 재질': 'water_block_material',
+    '라디에이터 크기': 'radiator_size',
+    '튜브 길이': 'tube_length'
 }
 
+# 소켓 지원 컬럼 목록
+socket_columns = [
+    'LGA1851', 'LGA1700', 'LGA1200', 'LGA115(X)', 'AM4', 'AM5',
+    'LGA2011-V3', 'LGA2011', 'LGA2066', 'FM(X),AM(X)', 'LGA775',
+    'sTRX4', 'TR4', 'LGA1366', 'AM1', '소켓940', '소켓754', '소켓939',
+    'sWRX8', 'SP3', 'LGA4677', 'LGA4189-4/5', 'TR5(sTRX5/sWRX9)',
+    'SP6', 'SP5', '소켓478', 'LGA3647', 'LGA771'
+]
+
 try:
-    # 테이블의 모든 컬럼 가져오기
-    all_columns = [col[0] for col in table_schema]
-    
-    # 사용 가능한 컬럼 필터링 (primary key 제외)
-    available_columns = all_columns.copy()
-    if primary_key in available_columns:
-        available_columns.remove(primary_key)
+    # 사용 가능한 컬럼 확인
+    available_columns = set(column_types.keys())
     
     # 현재 최대 ID 값 확인
-    max_id = conn.sql(f"SELECT COALESCE(MAX({primary_key}), 0) FROM gpu").fetchone()[0]
-    logging.info(f"현재 최대 GPU ID: {max_id}")
-    
-    # 데이터 삽입
-    logging.info("GPU 데이터 삽입 중...")
-    inserted_count = 0
+    max_id = conn.sql("SELECT COALESCE(MAX(cooler_id), 0) FROM cpu_cooler").fetchone()[0]
+    logging.info(f"현재 최대 cooler_id: {max_id}")
     
     # 모델명 중복 방지를 위한 사전
     used_model_names = set()
     
+    # 데이터 삽입
+    logging.info("CPU 쿨러 데이터 삽입 중...")
+    inserted_count = 0
+    
     for idx, row in df.iterrows():
         try:
-            # 필요한 컬럼만 포함하는 딕셔너리 생성
             data = {}
             
-            # 엑셀 컬럼을 DB 컬럼으로 매핑
+            # 엑셀 데이터를 데이터베이스 컬럼에 매핑
             for excel_col, db_col in column_mapping.items():
                 if excel_col in df.columns and db_col in available_columns:
                     value = row[excel_col]
@@ -273,33 +274,25 @@ try:
                             value = extract_number(value)
                     
                     # 특정 컬럼에 대한 추가 처리
-                    if db_col in ['core_clock', 'memory_clock'] and isinstance(value, str):
-                        value = extract_float(value)
-                    elif db_col in ['memory_capacity'] and isinstance(value, str):
-                        # 메모리 용량에서 숫자만 추출 (예: "8(GB)" -> 8)
-                        match = re.search(r'(\d+)', value)
-                        if match:
-                            value = int(match.group(1))
-                    elif db_col in ['memory_bus'] and isinstance(value, str):
-                        # 메모리 버스에서 숫자만 추출 (예: "128(bit)" -> 128)
-                        match = re.search(r'(\d+)', value)
-                        if match:
-                            value = int(match.group(1))
-                    elif db_col in ['length', 'width', 'height'] and isinstance(value, str):
-                        # 치수 정보 처리 (예: "249.9(mm)" -> 250)
+                    if db_col in ['height', 'width', 'depth', 'fan_size'] and isinstance(value, str):
                         value = extract_dimension(value)
+                    elif db_col == 'tdp_support' and isinstance(value, str):
+                        # TDP 값 추출 (예: "150W" -> 150)
+                        match = re.search(r'(\d+)', value)
+                        if match:
+                            value = int(match.group(1))
                     
                     data[db_col] = value
             
+            # 소켓 지원 정보 처리
+            socket_support = process_socket_support(row, socket_columns)
+            if socket_support:
+                data['socket_support'] = socket_support
+            
             # 품명을 모델명으로 사용
             if 'product_name' in data and data['product_name'] is not None:
-                data['model_name'] = data['product_name']
-            # 칩셋 정보로 모델명 생성
-            elif 'chipset' in data and data['chipset'] is not None:
-                if 'manufacturer' in data and data['manufacturer'] is not None:
-                    data['model_name'] = f"{data['manufacturer']} {data['chipset']}"
-                else:
-                    data['model_name'] = data['chipset']
+                if 'model_name' not in data or data['model_name'] is None:
+                    data['model_name'] = data['product_name']
             
             # 필수 컬럼인 model_name이 없으면 건너뛰기
             if 'model_name' not in data or data['model_name'] is None:
@@ -317,16 +310,16 @@ try:
             # 사용된 모델명 기록
             used_model_names.add(data['model_name'])
             
-            # gpu_id 값 설정 (자동 증가 필드가 작동하지 않는 경우)
+            # cooler_id 값 설정 (자동 증가 필드가 작동하지 않는 경우)
             max_id += 1
-            data['gpu_id'] = max_id
+            data['cooler_id'] = max_id
                 
             # SQL 쿼리 생성
             columns = ', '.join([f'"{col}"' for col in data.keys()])
             placeholders = ', '.join(['?' for _ in data.keys()])
             values = list(data.values())
             
-            query = f"INSERT INTO gpu ({columns}) VALUES ({placeholders})"
+            query = f"INSERT INTO cpu_cooler ({columns}) VALUES ({placeholders})"
             conn.execute(query, values)
             inserted_count += 1
             
@@ -338,11 +331,11 @@ try:
             continue
         
     conn.commit()
-    logging.info(f"GPU 데이터 삽입 완료: {inserted_count}개 행 삽입됨")
+    logging.info(f"CPU 쿨러 데이터 삽입 완료: {inserted_count}개 행 삽입됨")
     
     # 삽입 후 데이터 확인
-    final_count = conn.sql("SELECT COUNT(*) FROM gpu").fetchone()[0]
-    logging.info(f"최종 GPU 데이터 수: {final_count}")
+    final_count = conn.sql("SELECT COUNT(*) FROM cpu_cooler").fetchone()[0]
+    logging.info(f"최종 CPU 쿨러 데이터 수: {final_count}")
     
 except Exception as e:
     try:
@@ -354,4 +347,4 @@ except Exception as e:
 
 # 데이터베이스 연결 종료
 conn.close()
-logging.info("데이터베이스 연결 종료")
+logging.info("데이터베이스 연결 종료") 

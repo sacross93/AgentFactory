@@ -5,6 +5,17 @@ import logging
 import datetime
 import math
 import re
+import os
+
+# 엑셀 파일 로드 (파일 존재 여부 확인)
+raw_xlsx_dir = "./cs_agent/raw_xlsx/"
+
+# 파일 패턴으로 가장 최신 파일 찾기 함수
+def find_latest_file(directory, prefix):
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith('.xlsx')]
+    if not files:
+        return None
+    return max(files)  # 파일명 기준으로 가장 최신 파일 반환
 
 # 로그 설정
 log_filename = f"powersupply_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -15,6 +26,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+power_file = find_latest_file(raw_xlsx_dir, "Power_")
+
 # 콘솔에도 로그 출력
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
@@ -24,7 +37,7 @@ logging.getLogger('').addHandler(console)
 
 # 데이터베이스 연결
 logging.info("데이터베이스 연결 중...")
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 logging.info("데이터베이스 연결 성공")
 
 # 테이블 스키마 확인
@@ -43,7 +56,7 @@ logging.info(f"파워서플라이 테이블 기본 키: {primary_key}")
 
 # 엑셀 파일 읽기
 logging.info("PowerSupply.xlsx 파일 읽는 중...")
-df = pd.read_excel("PowerSupply.xlsx")
+df = pd.read_excel(f"{raw_xlsx_dir}{power_file}")
 logging.info(f"엑셀 파일 읽기 완료: {len(df)}개 행 발견")
 
 # 기존 파워서플라이 데이터 삭제
@@ -148,7 +161,7 @@ column_mapping = {
     '+3.3V': 'plus3v3',
     '80PLUS': 'efficiency',
     '보증기간': 'warranty',
-    '품명': 'product_name',
+    '제품명(전체)': 'product_name',
     '모델명': 'model_name',
     '법에 의한 인증, 허가 등을 받았음을 확인할 수 있는 경우 그에 대한 사항': 'kc_certification',
     '제조국 또는 원산지': 'country_of_origin',

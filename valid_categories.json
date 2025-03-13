@@ -88,5 +88,14 @@
       "cate2": "18"
     },
     "products": []
+  },
+  "2_574": {
+    "name": "CpuCooler",
+    "params": {
+      "depth": "2",
+      "cate1": "2",
+      "cate2": "574"
+    },
+    "products": []
   }
 }

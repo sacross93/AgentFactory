@@ -3,6 +3,17 @@ import pandas as pd
 import numpy as np
 import logging
 import datetime
+import os
+
+raw_xlsx_dir = "./cs_agent/raw_xlsx/"
+
+def find_latest_file(directory, prefix):
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith('.xlsx')]
+    if not files:
+        return None
+    return max(files)
+
+mb_file = find_latest_file(raw_xlsx_dir, "Mainboard_")
 
 # 로그 설정
 log_filename = f"motherboard_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -22,7 +33,7 @@ logging.getLogger('').addHandler(console)
 
 # 데이터베이스 연결
 logging.info("데이터베이스 연결 중...")
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 logging.info("데이터베이스 연결 성공")
 
 # 테이블 컬럼 확인
@@ -38,7 +49,7 @@ logging.info("기존 마더보드 데이터 삭제 완료")
 
 # 마더보드 데이터 로드
 logging.info("마더보드 엑셀 파일 로드 중...")
-motherboard = pd.read_excel("Motherboard.xlsx")
+motherboard = pd.read_excel(f"{raw_xlsx_dir}{mb_file}")
 logging.info(f"마더보드 엑셀 파일 로드 완료 - {len(motherboard)} 행 발견")
 
 # NaN 값을 None으로 변환하는 함수
@@ -158,11 +169,14 @@ failure_reasons = {}
 for idx, row in motherboard.iterrows():
     mb_id = idx + 1  # 1부터 시작하는 고유 ID 생성
     
-    # 제조사와 모델명 조합으로 고유한 모델명 생성
-    manufacturer = row.get('수입/제조사', '')
-    chipset = row.get('칩셋', '')
-    socket = row.get('소켓', '')
-    model_name = f"{manufacturer} {chipset} {socket} #{mb_id}"
+    # 제품명 컬럼에서 직접 가져오기
+    model_name = row.get('제품명(전체)', '')
+    if pd.isna(model_name) or model_name == '':
+        # 제품명이 없는 경우 대체 방법 사용
+        manufacturer = row.get('수입/제조사', '')
+        chipset = row.get('칩셋', '')
+        socket = row.get('소켓', '')
+        model_name = f"{manufacturer} {chipset} {socket} #{mb_id}"
     
     try:
         # 값 준비

@@ -5,6 +5,17 @@ import logging
 import datetime
 import math
 import re
+import os
+
+raw_xlsx_dir = "./cs_agent/raw_xlsx/"
+
+def find_latest_file(directory, prefix):
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith('.xlsx')]
+    if not files:
+        return None
+    return max(files)
+
+memory_file = find_latest_file(raw_xlsx_dir, "Mainboard_")
 
 # 로그 설정
 log_filename = f"memory_insert_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -24,7 +35,7 @@ logging.getLogger('').addHandler(console)
 
 # 데이터베이스 연결
 logging.info("데이터베이스 연결 중...")
-conn = duckdb.connect('pc_parts.db')
+conn = duckdb.connect('./cs_agent/db/pc_parts.db')
 logging.info("데이터베이스 연결 성공")
 
 # 테이블 스키마 확인
@@ -43,7 +54,7 @@ logging.info(f"메모리 테이블 기본 키: {primary_key}")
 
 # 엑셀 파일 읽기
 logging.info("Memory.xlsx 파일 읽는 중...")
-df = pd.read_excel("Memory.xlsx")
+df = pd.read_excel(f"{raw_xlsx_dir}{memory_file}")
 logging.info(f"엑셀 파일 읽기 완료: {len(df)}개 행 발견")
 
 # 기존 메모리 데이터 삭제
@@ -247,6 +258,14 @@ try:
     # 모델명 중복 방지를 위한 사전
     used_model_names = set()
     
+    # 기존 모델명 가져오기
+    existing_models = conn.sql("SELECT model_name FROM memory").fetchall()
+    for model in existing_models:
+        used_model_names.add(model[0])
+    
+    inserted_count = 0
+    skipped_count = 0
+    
     for idx, row in df.iterrows():
         try:
             # 필요한 컬럼만 포함하는 딕셔너리 생성
@@ -268,24 +287,30 @@ try:
                         if 'BOOLEAN' in col_type and isinstance(value, str):
                             value = convert_to_bool(value)
                         elif 'FLOAT' in col_type and isinstance(value, str):
-                            value = extract_float(value)
+                            try:
+                                value = extract_float(value)
+                            except Exception as e:
+                                logging.warning(f"행 #{idx}, 컬럼 '{col}': 부동 소수점 변환 실패: {value} - {str(e)}")
+                                value = None
                         elif 'INTEGER' in col_type and isinstance(value, str):
-                            value = extract_number(value)
+                            try:
+                                value = extract_number(value)
+                            except Exception as e:
+                                logging.warning(f"행 #{idx}, 컬럼 '{col}': 정수 변환 실패: {value} - {str(e)}")
+                                value = None
                     
                     data[col] = value
             
-            # model_name이 없는 경우 product_name 사용
-            if 'model_name' in data and data['model_name'] is None and 'product_name' in data:
-                data['model_name'] = data['product_name']
-            
-            # model_name이 '상세정보참조'인 경우 product_name으로 대체
-            if 'model_name' in data and data['model_name'] == '상세정보참조' and 'product_name' in data and data['product_name'] is not None:
-                data['model_name'] = data['product_name']
-                logging.info(f"행 #{idx}: 모델명 '상세정보참조'를 품명 '{data['product_name']}'으로 대체")
+            # 제품명(전체) 컬럼이 있으면 product_name과 model_name 모두에 사용
+            if '제품명(전체)' in df.columns and row['제품명(전체)'] is not None and pd.notna(row['제품명(전체)']):
+                data['product_name'] = row['제품명(전체)']
+                data['model_name'] = row['제품명(전체)']
+                logging.info(f"행 #{idx}: '제품명(전체)' 컬럼 값 '{row['제품명(전체)']}'을 product_name과 model_name으로 사용")
             
             # 필수 컬럼인 model_name이 없으면 건너뛰기
             if 'model_name' not in data or data['model_name'] is None:
                 logging.warning(f"모델명이 없는 행 건너뛰기: 행 #{idx}")
+                skipped_count += 1
                 continue
             
             # 모델명 중복 확인 및 처리
@@ -309,18 +334,28 @@ try:
             values = list(data.values())
             
             query = f"INSERT INTO memory ({columns}) VALUES ({placeholders})"
-            conn.execute(query, values)
-            inserted_count += 1
             
-            if inserted_count % 10 == 0:
-                logging.info(f"{inserted_count}개 행 삽입 완료")
+            try:
+                conn.execute(query, values)
+                inserted_count += 1
+                
+                if inserted_count % 10 == 0:
+                    logging.info(f"{inserted_count}개 행 삽입 완료")
+                    
+            except Exception as insert_error:
+                logging.error(f"행 #{idx} 삽입 중 오류: {str(insert_error)}")
+                if "UNIQUE constraint failed" in str(insert_error):
+                    logging.warning(f"중복된 모델명으로 인한 삽입 실패: {data['model_name']}")
+                skipped_count += 1
+                continue
                 
         except Exception as row_error:
-            logging.error(f"행 #{idx} 삽입 중 오류: {str(row_error)}")
+            logging.error(f"행 #{idx} 처리 중 오류: {str(row_error)}")
+            skipped_count += 1
             continue
         
     conn.commit()
-    logging.info(f"메모리 데이터 삽입 완료: {inserted_count}개 행 삽입됨")
+    logging.info(f"메모리 데이터 삽입 완료: {inserted_count}개 행 삽입됨, {skipped_count}개 행 건너뜀")
     
     # 삽입 후 데이터 확인
     final_count = conn.sql("SELECT COUNT(*) FROM memory").fetchone()[0]
