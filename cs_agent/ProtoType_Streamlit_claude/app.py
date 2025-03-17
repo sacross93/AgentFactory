@@ -94,47 +94,19 @@ def main():
     
     # 처리가 완료되고 로그가 존재하는 경우 - 이전 프로세스의 결과 표시
     if st.session_state.get("process_complete", False) and st.session_state.get("final_answer", None):
-        # final_answer는 직접 표시하지 않고, 이미 messages에 추가되어 표시되도록 함
-        # with chat_container.chat_message("assistant"):
-        #     st.markdown(st.session_state.final_answer)  # 이 부분을 주석 처리
-        
-        # 로그와 상세 정보만 expander에 표시
-        query_type = st.session_state.get("query_type", "unknown")
-        query_type_display = {
-            "web_search": "🌐 웹 검색",
-            "pc_compatibility": "🖥️ PC 부품 호환성 분석",
-            "hybrid": "�� 통합 분석 (웹 검색 + 호환성 분석)",
-            "error": "❌ 오류 발생"
-        }
+        # 처리 유형 확인 (세션 상태에서 가져옴)
+        processing_type = st.session_state.get("processing_type", st.session_state.get("query_type", "알 수 없음"))
         
         # 마지막 메시지(방금 추가된 답변)에 대해서만 expander 표시
         last_msg_idx = len(st.session_state.messages) - 1
         if last_msg_idx >= 0 and st.session_state.messages[last_msg_idx]["role"] == "assistant":
-            # 생성 과정을 토글 형식으로 표시
-            with st.expander(f"📊 답변 생성 과정 보기 - {query_type_display.get(query_type, '알 수 없음')}", expanded=False):
-                # 여기에 로그 표시 로직 유지
-                st.markdown(f"**처리 유형:** {query_type_display.get(query_type, '알 수 없음')}")
-                
-                # 로그 영역 - 전체 로그 정리된 형태로 표시
-                st.markdown("### 🔍 전체 처리 로그")
-                
-                # 스크롤 가능한 컨테이너로 로그 표시 - CSS 스타일 적용
-                with st.container():
-                    st.markdown('<div class="log-scroll-area">', unsafe_allow_html=True)
-                    for idx, log in enumerate(st.session_state.process_logs):
-                        # 로그 종류에 따라 다른 스타일 적용 (오류, 경고, 성공, 일반 정보)
-                        if "❌" in log or "오류" in log:
-                            st.markdown(f"<div class='log-entry log-error'>{idx+1}. {log}</div>", unsafe_allow_html=True)
-                        elif "⚠️" in log:
-                            st.markdown(f"<div class='log-entry log-warning'>{idx+1}. {log}</div>", unsafe_allow_html=True)
-                        elif "✅" in log or "완료" in log:
-                            st.markdown(f"<div class='log-entry log-success'>{idx+1}. {log}</div>", unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"<div class='log-entry log-info'>{idx+1}. {log}</div>", unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+            # 생성 과정을 토글 형식으로 표시 - expander의 제목에 처리 유형을 표시합니다
+            with st.expander(f"📊 답변 생성 과정 보기 - {processing_type}", expanded=False):
+                # 로그 표시 - session_state에 저장된 로그를 가져와 표시합니다
+                for log in st.session_state.process_logs:
+                    st.markdown(f"- {log}")
             
             # 프로세스 완료 상태 초기화 (다음 질문을 위해)
-            # 이렇게 하면 다음 질문을 처리할 준비가 됩니다
             st.session_state.process_complete = False
             st.session_state.final_answer = None
     
@@ -166,27 +138,61 @@ def main():
     # 처리 중인 경우 에이전트 실행
     if st.session_state.processing and st.session_state.current_question:
         # 처리 상태 표시 및 답변 생성 함수 호출
-        display_integrated_processing(
+        response = display_integrated_processing(
             chat_container, 
             st.session_state.integrated_agent,
             st.session_state.current_question,
             memory,
             sidebar_options["conversation_style"]
         )
+        
+        # response 객체를 세션 상태에 저장 (rerun 후에도 유지되도록)
+        st.session_state.last_response = response
+        
+        # 페이지 rerun - 처리 완료 후 표시를 위해
+        st.rerun()
+    else:
+        # 처리 완료 후 expander 표시
+        if st.session_state.get("process_complete", False) and st.session_state.get("last_response"):
+            response = st.session_state.last_response
+            
+            # 가능한 모든 소스에서 처리 유형 결정
+            processing_type = response.get("processing_type", None)
+            if not processing_type:
+                processing_type = st.session_state.get("query_type", "알 수 없음")
+                # 게임 관련 처리인지 확인
+                if "game" in processing_type.lower() or "게임" in str(st.session_state.get("current_question", "")):
+                    processing_type = "게임 PC 구성 추천"
+                elif "호환성" in processing_type:
+                    processing_type = "PC 부품 호환성 분석"
+            
+            # expander 제목 설정
+            expander_title = f"📊 답변 생성 과정 보기 - {processing_type}"
+            
+            # 로그 표시
+            with st.expander(expander_title, expanded=False):
+                logs_to_display = []
+                
+                # 1. 응답 객체의 로그 확인
+                if "processing_logs" in response and response["processing_logs"]:
+                    logs_to_display = response["processing_logs"]
+                # 2. 터미널 로그 확인
+                elif "terminal_logs" in response and response["terminal_logs"]:
+                    logs_to_display = [log.replace("로그 추가: ", "") for log in response["terminal_logs"]]
+                # 3. 세션 로그 확인
+                elif st.session_state.get("process_logs"):
+                    logs_to_display = st.session_state.process_logs
+                
+                # 로그 표시
+                for log in logs_to_display:
+                    st.markdown(f"- {log}")
+                
+            # 처리 완료 상태 초기화
+            st.session_state.process_complete = False
 
 def display_integrated_processing(chat_container, integrated_agent, question, memory, conversation_style):
     """
-    통합 에이전트 처리 과정을 표시하는 함수
-    
-    Args:
-        chat_container: 채팅 메시지를 표시할 컨테이너
-        integrated_agent: 통합 에이전트 인스턴스
-        question: 처리할 질문
-        memory: 대화 기록 메모리
-        conversation_style: 대화 스타일 설정
-        
-    Returns:
-        생성된 답변 텍스트
+    통합 에이전트 응답 생성 및 처리 상태 표시
     """
     # 채팅 컨테이너 외부에 로그 표시 영역 생성
     log_display = st.empty()  # 메인 채팅 영역 외부에 로그 표시 영역
@@ -372,6 +378,12 @@ def display_integrated_processing(chat_container, integrated_agent, question, me
                 else:
                     processed_answer = answer  # 중복이 없는 경우 원본 답변 사용
 
+                # 캡처된 터미널 로그가 있는지 확인하고 표시
+                if "terminal_logs" in result:
+                    terminal_logs = result["terminal_logs"]
+                    for log in terminal_logs:
+                        add_log(log.replace("로그 추가: ", ""))  # "로그 추가: " 접두어 제거
+
             except Exception as e:
                 # 전체 처리 과정에서의 예외 처리
                 error_msg = str(e)
@@ -395,6 +407,7 @@ def display_integrated_processing(chat_container, integrated_agent, question, me
     st.session_state.final_answer = processed_answer
     st.session_state.query_type = query_type
     st.session_state.process_complete = True
+    st.session_state.process_logs = st.session_state.process_logs.copy()
     
     # 메모리에 대화 저장 - 다음 대화를 위한 컨텍스트 유지
     memory.save_context({"question": question}, {"answer": processed_answer})
@@ -406,11 +419,28 @@ def display_integrated_processing(chat_container, integrated_agent, question, me
     st.session_state.processing = False
     st.session_state.current_question = None
     
-    # 처리 완료 후 페이지 rerun - 이렇게 하면 expander에 로그가 유지됨
-    # 중요: 이 rerun이 핵심! 이것으로 인해 로그가 사라지지 않고 expander에 유지됨
+    # 중요: 결과 객체에도 처리 타입 및 로그 저장 (expander 표시용)
+    if "processing_type" not in result:
+        # 응답에 처리 유형 정보가 없으면 추가
+        if query_type == "game_pc_recommendation":
+            result["processing_type"] = "게임 PC 구성 추천"
+        elif query_type == "pc_compatibility":
+            result["processing_type"] = "PC 부품 호환성 분석"
+        elif "권장" in question or "사양" in question:
+            result["processing_type"] = "프로그램 요구사항 분석"
+        else:
+            result["processing_type"] = query_type
+    
+    # 처리 유형을 세션 상태에도 저장 (rerun 후에도 유지되도록)
+    st.session_state.processing_type = result.get("processing_type", query_type)
+
+    # 처리 로그도 결과에 저장
+    result["processing_logs"] = st.session_state.process_logs.copy()
+    
+    # 처리 완료 후 페이지 rerun - 이 rerun이 핵심
     st.rerun()
     
-    return processed_answer
+    return result
 
 # 텍스트 유사도 비교 함수
 def similar_text(text1, text2, threshold=0.8):
