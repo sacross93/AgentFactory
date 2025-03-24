@@ -80,8 +80,8 @@ def orchestrator_agent(user_query: str) -> Dict[str, Any]:
 # 둘 다 선택 질의
 # orchestrator_agent("배틀그라운드 권장사양을 알고싶어. 해당 권장사양을 기반으로 호환되는 실제 부품들을 알고 싶어")
 
-from web_search_langraph import run_web_search
-test = run_web_search("배틀그라운드 권장사양을 알고싶어. 권장사양에 맞게 PC 구성을 하려고 하거든")
+# from web_search_langraph import run_web_search
+# test = run_web_search("배틀그라운드 권장사양을 알고싶어. 권장사양에 맞게 PC 구성을 하려고 하거든")
 
 # web agent 기반 pc check 해주는 AGent
 ## 웹 검색 결과를 받아와서 pc check 에이전트에 전달해주는 Json 구조(pydantic)
@@ -137,9 +137,9 @@ def web_search_based_pc_check(web_search_result: str) -> Dict[str, Any]:
     return result
     
 # 테스트
-test2 = web_search_based_pc_check(test)
+# test2 = web_search_based_pc_check(test)
 # 테스트
-test3 = run_pc_check(test2)
+# test3 = run_pc_check(test2)
 
 # 종합 결과를 기반으로 답변을 주는 Agent
 def sumary_answer_agent(web_search_result: str, pc_check_result: str, user_question: str) -> Dict[str, Any]:
@@ -165,4 +165,4 @@ def sumary_answer_agent(web_search_result: str, pc_check_result: str, user_quest
     
     return result
 
-test4 = sumary_answer_agent(test, test3, "배틀그라운드 권장사양을 알고싶어. 권장사양에 맞게 PC 구성을 하려고 하거든")
+# test4 = sumary_answer_agent(test, test3, "배틀그라운드 권장사양을 알고싶어. 권장사양에 맞게 PC 구성을 하려고 하거든")

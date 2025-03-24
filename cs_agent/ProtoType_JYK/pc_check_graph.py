@@ -143,7 +143,7 @@ def should_continue(state: AgentState) -> str:
     if state["finished"]:
         decision = "end"
         reason = "만족스러운 결과를 찾았습니다"
-    elif state["iteration"] >= 5:
+    elif state["iteration"] >= 3:
         decision = "end"
         reason = f"최대 반복 횟수({state['iteration']})에 도달했습니다"
     elif len(state["attempt_history"]) >= 2 and state["attempt_history"][-1]["issues"] == state["attempt_history"][-2]["issues"]:
