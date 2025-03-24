@@ -214,7 +214,8 @@ def run_web_search(user_query: str) -> str:
 
 # 테스트
 if __name__ == "__main__":
-    user_query = "배틀그라운드 권장사양을 알고싶어. 난 CPU는 5600x 사용하고 있고 GPU는 RTX 3080사용하고 있는데 잘 돌아갈지 궁금하거든"
+    # user_query = "배틀그라운드 권장사양을 알고싶어. 난 CPU는 5600x 사용하고 있고 GPU는 RTX 3080사용하고 있는데 잘 돌아갈지 궁금하거든"
+    user_query = "배틀그라운드 권장사양을 알고싶어. 권장사양에 맞게 PC 구성을 하려고 하거든"
     result = web_search_langraph(user_query)
     print("최종 답변:")
     print(result["final_answer"])
