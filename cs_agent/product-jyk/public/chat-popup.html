@@ -456,6 +456,51 @@
       background-color: #333;
       color: #f3f4f6;
     }
+    
+    /* 로딩 인디케이터 스타일 추가 */
+    .loading-indicator {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+      gap: 6px;
+    }
+    
+    .loading-indicator .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--text-color, #333);
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+    
+    .dark .loading-indicator .dot {
+      background-color: #f3f4f6;
+    }
+    
+    .loading-indicator .dot:nth-child(1) {
+      animation-delay: -0.32s;
+    }
+    
+    .loading-indicator .dot:nth-child(2) {
+      animation-delay: -0.16s;
+    }
+    
+    @keyframes bounce {
+      0%, 80%, 100% { 
+        transform: scale(0);
+      }
+      40% { 
+        transform: scale(1.0);
+      }
+    }
+    
+    /* 비활성화된 입력 스타일 */
+    .message-input:disabled,
+    .send-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -671,78 +716,395 @@
     });
     
     // 메시지 전송
-    function sendMessage() {
-      const message = messageInput.value.trim();
-      if (message) {
-        // 사용자 메시지 추가 - user-message 클래스 추가
-        const userMessageHTML = `
-          <div class="message user-message">
+    async function sendMessage() {
+      const text = messageInput.value.trim();
+      if (!text) return;
+      
+      // 사용자 메시지 추가
+      const userMessageHTML = `
+        <div class="message user-message">
+          <div class="message-avatar">
+            <div class="user-icon">
+              <img src="/user.png" alt="사용자">
+            </div>
+          </div>
+          <div class="message-content">
+            <div class="message-header">
+              <span class="sender-name">You</span>
+              <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </div>
+            <div class="message-bubble">
+              <div class="message-text">
+                <p>${text}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      chatArea.insertAdjacentHTML('beforeend', userMessageHTML);
+      messageInput.value = '';
+      
+      // 로딩 메시지 추가 (AI 응답 대기 중 표시)
+      const loadingMessageId = `loading-${Date.now()}`;
+      const loadingMessageHTML = `
+        <div id="${loadingMessageId}" class="message ai-message">
+          <div class="message-avatar">
+            <div class="ai-icon">
+              <img src="/chatbot.png" alt="제플몰 AI">
+            </div>
+          </div>
+          <div class="message-content">
+            <div class="message-header">
+              <span class="sender-name">제플몰</span>
+              <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </div>
+            <div class="message-bubble">
+              <div class="message-text">
+                <div class="loading-indicator">
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      chatArea.insertAdjacentHTML('beforeend', loadingMessageHTML);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      
+      // 입력란과 전송 버튼 비활성화
+      messageInput.disabled = true;
+      sendButton.disabled = true;
+      
+      // API 통신 디버그 로그
+      logDebug("메시지 전송 시작", text);
+      
+      // AI 응답
+      try {
+        // 쿼리 제출
+        const requestId = await submitQuery(text);
+        logDebug("요청 ID 받음", requestId);
+        
+        // 완료 여부 추적
+        let completed = false;
+        let attempts = 0;
+        const maxAttempts = 30; // 최대 30회 시도
+        
+        // 처리 상태 확인 루프
+        while (!completed && attempts < maxAttempts) {
+          attempts++;
+          const status = await checkQueryStatus(requestId);
+          logDebug(`상태 확인 #${attempts}`, status);
+          
+          // 상태에 따른 처리
+          if (status.status === 'completed' || status.status === 'complete') {
+            completed = true;
+            // 결과 가져오기
+            const result = await getQueryResult(requestId);
+            logDebug("결과 데이터:", result);
+            
+            // 로딩 메시지 제거
+            const loadingMessage = document.getElementById(loadingMessageId);
+            if (loadingMessage) {
+              loadingMessage.remove();
+            }
+            
+            // 결과 검증 및 추출
+            let answer = '';
+            if (result) {
+              if (result.answer) {
+                answer = result.answer;
+              } else if (result.response) {
+                answer = result.response;
+              } else if (typeof result === 'string') {
+                answer = result;
+              } else {
+                // 객체인 경우 JSON 문자열로 변환
+                answer = JSON.stringify(result, null, 2);
+              }
+            } else {
+              throw new Error('응답 데이터 없음');
+            }
+            
+            // AI 응답 표시
+            const aiMessageHTML = `
+              <div class="message ai-message">
+                <div class="message-avatar">
+                  <div class="ai-icon">
+                    <img src="/chatbot.png" alt="제플몰 AI">
+                  </div>
+                </div>
+                <div class="message-content">
+                  <div class="message-header">
+                    <span class="sender-name">제플몰</span>
+                    <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  </div>
+                  <div class="message-bubble">
+                    <div class="message-text">
+                      ${formatAIResponse(answer)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+            
+            chatArea.insertAdjacentHTML('beforeend', aiMessageHTML);
+            chatArea.scrollTop = chatArea.scrollHeight;
+          } else if (status.status === 'failed' || status.status === 'error') {
+            completed = true;
+            throw new Error(status.error || '처리 실패');
+          } else {
+            // 진행 중인 경우 잠시 대기
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        
+        // 최대 시도 횟수 초과 시
+        if (!completed) {
+          throw new Error('처리 시간 초과');
+        }
+      } catch (error) {
+        logDebug('API 통신 오류:', error);
+        
+        // 로딩 메시지 제거
+        const loadingMessage = document.getElementById(loadingMessageId);
+        if (loadingMessage) {
+          loadingMessage.remove();
+        }
+        
+        // 오류 메시지 표시
+        const aiMessageHTML = `
+          <div class="message ai-message">
             <div class="message-avatar">
-              <div class="user-icon">
-                <img src="/user.png" alt="사용자">
+              <div class="ai-icon">
+                <img src="/chatbot.png" alt="제플몰 AI">
               </div>
             </div>
             <div class="message-content">
               <div class="message-header">
-                <span class="sender-name">You</span>
+                <span class="sender-name">제플몰</span>
                 <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
               </div>
               <div class="message-bubble">
                 <div class="message-text">
-                  <p>${message}</p>
+                  <p>죄송합니다. 요청 처리 중 오류가 발생했습니다: ${error.message}</p>
                 </div>
               </div>
             </div>
           </div>
         `;
         
-        chatArea.insertAdjacentHTML('beforeend', userMessageHTML);
-        messageInput.value = '';
-        
-        // AI 응답
-        setTimeout(() => {
-          let aiResponse = "죄송합니다. 현재 데모 버전이라 실제 응답을 생성할 수 없습니다.";
-          
-          if (message.includes("좋아") || message.includes("ㅎㅇ") || message.includes("호")) {
-            aiResponse = "최종합니다. 현재 데모 버전이라 실제 응답을 생성할 수 없습니다.";
-          }
-          
-          const aiMessageHTML = `
-            <div class="message ai-message">
-              <div class="message-avatar">
-                <div class="ai-icon">
-                  <img src="/chatbot.png" alt="제플몰 AI">
-                </div>
-              </div>
-              <div class="message-content">
-                <div class="message-header">
-                  <span class="sender-name">제플몰</span>
-                  <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                </div>
-                <div class="message-bubble">
-                  <div class="message-text">
-                    <p>${aiResponse}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          `;
-          
-          chatArea.insertAdjacentHTML('beforeend', aiMessageHTML);
-          chatArea.scrollTop = chatArea.scrollHeight;
-        }, 1000);
-        
+        chatArea.insertAdjacentHTML('beforeend', aiMessageHTML);
         chatArea.scrollTop = chatArea.scrollHeight;
+      } finally {
+        // 입력란과 전송 버튼 다시 활성화
+        messageInput.disabled = false;
+        sendButton.disabled = false;
+        messageInput.focus();
       }
     }
     
+    // API 통신 관련 변수와 함수
+    const API_DEFAULT_URL = 'http://localhost:8000';
+    let API_BASE_URL = API_DEFAULT_URL;  // 변경 가능하도록 let으로 선언
+
+    // 디버깅 로그 함수
+    function logDebug(message, data) {
+      const timestamp = new Date().toISOString().split('T')[1].substring(0, 8);
+      console.log(`[${timestamp}] ${message}`, data || '');
+    }
+
+    // fetch 요청 타임아웃 헬퍼 개선
+    function fetchWithTimeout(url, options = {}, timeout = 5000) {
+      // 캐시 방지를 위한 타임스탬프 추가
+      const nocacheUrl = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+      
+      logDebug(`요청 시작: ${nocacheUrl}`);
+      
+      // 기본 옵션 설정
+      const mergedOptions = {
+        ...options,
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          ...options.headers
+        }
+      };
+      
+      return Promise.race([
+        fetch(nocacheUrl, mergedOptions)
+          .then(response => {
+            logDebug(`응답 수신: ${response.status} ${response.statusText}`);
+            return response;
+          }),
+        new Promise((_, reject) => 
+          setTimeout(() => {
+            logDebug(`요청 시간 초과: ${nocacheUrl}`);
+            reject(new Error('요청 시간 초과'));
+          }, timeout)
+        )
+      ]);
+    }
+
+    // 서버 상태 체크 함수
+    async function checkServerStatus() {
+      try {
+        logDebug("서버 상태 확인 시도...");
+        
+        const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
+          method: 'GET'
+        });
+        
+        if (response.ok) {
+          logDebug("서버 상태: 온라인");
+          
+          // 상태 표시기 업데이트
+          const indicators = document.querySelectorAll('.online-indicator');
+          indicators.forEach(indicator => {
+            indicator.style.backgroundColor = '#22c55e'; // 초록색 (온라인)
+          });
+          
+          return true;
+        } else {
+          throw new Error(`서버 응답 오류: ${response.status}`);
+        }
+      } catch (error) {
+        logDebug("서버 상태: 오프라인", error);
+        
+        // 접속 재시도를 위한 API URL 변경 시도
+        if (API_BASE_URL.includes('localhost')) {
+          API_BASE_URL = 'http://127.0.0.1:8000';
+          logDebug(`API URL 변경: ${API_BASE_URL}`);
+        }
+        
+        // 상태 표시기 업데이트
+        const indicators = document.querySelectorAll('.online-indicator');
+        indicators.forEach(indicator => {
+          indicator.style.backgroundColor = '#ef4444'; // 빨간색 (오프라인)
+        });
+        
+        return false;
+      }
+    }
+
+    // 질문 제출 함수
+    async function submitQuery(query) {
+      try {
+        logDebug("쿼리 제출 시작", query);
+        
+        const response = await fetchWithTimeout(`${API_BASE_URL}/query`, {
+          method: 'POST',
+          body: JSON.stringify({
+            query: query,
+            session_id: 'web-popup',
+            timeout: 120
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`API 오류: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        logDebug("쿼리 제출 성공", data);
+        return data.request_id;
+      } catch (error) {
+        logDebug("쿼리 제출 실패", error);
+        throw error;
+      }
+    }
+
+    // 상태 확인 함수
+    async function checkQueryStatus(requestId) {
+      try {
+        const response = await fetchWithTimeout(`${API_BASE_URL}/status/${requestId}`);
+        
+        if (!response.ok) {
+          throw new Error(`API 오류: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        logDebug(`쿼리 상태(${requestId}):`, data);
+        return data;
+      } catch (error) {
+        logDebug(`상태 확인 오류(${requestId}):`, error);
+        throw error;
+      }
+    }
+
+    // 결과 가져오기 함수
+    async function getQueryResult(requestId) {
+      try {
+        logDebug(`결과 가져오기 시작(${requestId})`);
+        const response = await fetchWithTimeout(`${API_BASE_URL}/result/${requestId}`);
+        
+        if (!response.ok) {
+          throw new Error(`API 오류: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        logDebug(`결과 받음(${requestId})`, data);
+        return data;
+      } catch (error) {
+        logDebug(`결과 가져오기 오류(${requestId})`, error);
+        throw error;
+      }
+    }
+
+    // 서버 상태 확인 설정
+    function setupServerStatusCheck() {
+      logDebug("서버 상태 확인 설정 중...");
+      
+      // 기존 인터벌 제거
+      if (window.serverStatusInterval) {
+        clearInterval(window.serverStatusInterval);
+      }
+      
+      // 초기 상태 확인
+      checkServerStatus();
+      
+      // 새 인터벌 설정 (5초마다 확인)
+      window.serverStatusInterval = setInterval(() => {
+        checkServerStatus().catch(err => {
+          logDebug("상태 확인 오류", err);
+        });
+      }, 5000);
+    }
+
+    // 페이지 로드 시 서버 상태 체크 시작
+    document.addEventListener('DOMContentLoaded', () => {
+      logDebug("페이지 로드됨, 서버 상태 확인 시작");
+      setupServerStatusCheck();
+    });
+
     // 이벤트 리스너
     sendButton.addEventListener('click', sendMessage);
     messageInput.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         sendMessage();
       }
     });
+
+    // AI 응답 형식화 함수
+    function formatAIResponse(text) {
+      if (!text) return '<p>응답이 없습니다.</p>';
+      
+      // 줄바꿈을 <br> 태그로 변환
+      let formatted = text.replace(/\n/g, '<br>');
+      
+      // 이미 HTML 태그가 포함되어 있지 않은 경우에만 <p> 태그로 감싸기
+      if (!formatted.includes('<p>') && !formatted.includes('<div>') && !formatted.includes('<ul>')) {
+        formatted = `<p>${formatted}</p>`;
+      }
+      
+      return formatted;
+    }
   </script>
 </body>
 </html> 

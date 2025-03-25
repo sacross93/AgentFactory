@@ -467,7 +467,7 @@ if __name__ == "__main__":
     ]
     
     # 세 번째 테스트 케이스 실행
-    user_query = test_cases[1]
+    user_query = test_cases[0]
     
     answer = orchestrator_graph(user_query)
     print("\n최종 답변:")

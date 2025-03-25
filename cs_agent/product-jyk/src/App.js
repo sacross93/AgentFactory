@@ -8,7 +8,7 @@ function App() {
     window.open(
       '/chat-popup.html', 
       'ChatPopup', 
-      'width=375,height=600,resizable=yes'
+      'width=400,height=800,resizable=yes'
     );
   };
 
