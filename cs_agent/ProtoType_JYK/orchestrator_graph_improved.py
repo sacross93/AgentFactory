@@ -34,6 +34,7 @@ class OrchestratorState(TypedDict):
     metrics: Dict[str, Dict[str, Union[float, str]]]  # 성능 메트릭
     status_messages: List[str]                # 진행 상황 메시지
     retry_counts: Dict[str, int]              # 에이전트별 재시도 횟수
+    chat_history: Optional[List[Dict[str, str]]]  # 대화 기록 추가
 
 # 성능 측정 데코레이터
 def measure_performance(agent_name):
@@ -114,8 +115,18 @@ def run_orchestrator(state: OrchestratorState) -> OrchestratorState:
     print(f"{'='*50}")
     print(f"[작업] 사용자 질의 분석 중: {state['user_query']}")
     
-    # 오케스트레이터 에이전트 실행
-    result = orchestrator_agent(state["user_query"])
+    # 대화 기록이 있으면 표시
+    chat_history = state.get("chat_history", [])
+    if chat_history and len(chat_history) > 1:  # 현재 질문 제외 대화 기록이 있는 경우
+        print(f"[정보] 대화 기록: {len(chat_history)} 메시지")
+        
+        # 최근 대화 내용 로깅 (마지막 2개 메시지만)
+        recent_messages = chat_history[-3:-1] if len(chat_history) > 2 else chat_history[:-1]
+        for msg in recent_messages:
+            print(f"[대화 기록] {msg['role']}: {msg['content'][:50]}...")
+    
+    # 오케스트레이터 에이전트 실행 (대화 기록 전달)
+    result = orchestrator_agent(state["user_query"], context=chat_history)
     
     # 실행할 에이전트 목록 추출
     agents_to_run = [agent["agent_type"] for agent in result["agents"]]
@@ -343,10 +354,12 @@ def should_retry(state: OrchestratorState, agent_name: str, max_retries: int = 2
     
     return False
 
-# 오케스트레이터 그래프 실행
-def orchestrator_graph(user_query: str) -> str:
+# 오케스트레이터 그래프 실행 함수 수정 (chat_history 매개변수 추가)
+def orchestrator_graph(user_query: str, chat_history: Optional[List[Dict[str, str]]] = None) -> str:
     print(f"\n{'*'*60}")
     print(f"시작: 오케스트레이터 그래프 (질문: {user_query})")
+    if chat_history and len(chat_history) > 0:
+        print(f"대화 기록: {len(chat_history)}개 메시지 있음")
     print(f"{'*'*60}")
     
     # 초기 상태 설정
@@ -364,7 +377,8 @@ def orchestrator_graph(user_query: str) -> str:
         "errors": {},
         "metrics": {},
         "status_messages": [f"[{datetime.now().strftime('%H:%M:%S')}] 처리 시작: {user_query}"],
-        "retry_counts": {}
+        "retry_counts": {},
+        "chat_history": chat_history or []  # 대화 기록 추가
     }
     
     # 그래프 정의

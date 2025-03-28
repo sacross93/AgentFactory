@@ -1,2 +1,19 @@
 # AgentFactory
-A collection of diverse LLM-powered agents ready to tackle various tasks.
+다양한 작업을 수행할 수 있는 LLM 기반 에이전트 모음입니다.
+제플몰 종합 상담 봇 (ZeppleMall Support Chat)
+프로젝트 개요
+제플몰 종합 상담 봇은 사용자 질문에 AI 기반으로 응답하는 웹 채팅 인터페이스입니다. FastAPI 백엔드와 통신하여 PC 사양 체크, 제품 추천, 호환성 확인 등 다양한 컴퓨터 관련 질문에 답변합니다.
+주요 기능
+AI 챗봇 인터페이스: 사용자 친화적인 웹 기반 채팅 UI
+실시간 서버 상태 확인: 온라인/오프라인 상태 표시 및 자동 재연결
+비동기 메시지 처리: 사용자 질문에 대한 비동기 처리와 응답 대기
+오류 처리 및 복구: 통신 장애 시 자동 재시도 및 사용자 알림
+반응형 디자인: 다양한 디바이스에 최적화된 UI
+기술 스택
+프론트엔드: HTML5, CSS3, JavaScript (바닐라)
+백엔드: FastAPI, Python
+AI 처리: LangGraph, GPT 기반 에이전트
+통신 프로토콜: RESTful API
+설치 및 실행 방법
+백엔드 (FastAPI 서버)
+필요한 패키지 설치:

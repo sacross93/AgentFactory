@@ -1,4 +1,5 @@
 import sys
+import json
 sys.path.append('/home/wlsdud022/AgentFactory/cs_agent/ProtoType_JYK')
 from cs_agent.ProtoType_JYK.pc_check_agents import *
 from typing import TypedDict, List, Dict, Any, Optional
@@ -41,7 +42,7 @@ def extract_tables(state: AgentState) -> AgentState:
     return {
         **state,
         "user_meaning": table_info["user_meaning"],
-        "used_tables": valid_tables,  # 실제 존재하는 테이블만 사용
+        "used_tables": valid_tables,
         "attempt_history": []
     }
 
@@ -102,6 +103,26 @@ def check_results(state: AgentState) -> AgentState:
         "attempt_history": attempt_history
     }
 
+def summarize_answer(state: AgentState) -> AgentState:
+    print(f"\n{'='*50}")
+    print(f"[실행 중] 요약 답변 에이전트")
+    print(f"{'='*50}")
+    print("[작업] 최종 답변 생성 중...")
+    
+    user_query = state["original_question"]
+    check_info = state.get("attempt_history", [])
+    
+    # check_info를 JSON 문자열로 변환
+    # check_info_str = json.dumps(check_info, ensure_ascii=False)
+    
+    final_answer = summary_answer_agent(check_info, user_query)
+    print(f"[결과] 최종 답변 생성 완료")
+    
+    return {
+        **state,
+        "answer": final_answer
+    }
+
 def modify_query(state: AgentState) -> AgentState:
     print(f"\n{'='*50}")
     print(f"[실행 중] 쿼리 수정 에이전트 (반복 {state['iteration']})")
@@ -141,20 +162,20 @@ def modify_query(state: AgentState) -> AgentState:
 
 def should_continue(state: AgentState) -> str:
     if state["finished"]:
-        decision = "end"
+        decision = "summarize"
         reason = "만족스러운 결과를 찾았습니다"
     elif state["iteration"] >= 3:
-        decision = "end"
+        decision = "summarize"
         reason = f"최대 반복 횟수({state['iteration']})에 도달했습니다"
     elif len(state["attempt_history"]) >= 2 and state["attempt_history"][-1]["issues"] == state["attempt_history"][-2]["issues"]:
-        decision = "end"
+        decision = "summarize"
         reason = "연속해서 같은 문제가 발생했습니다"
     else:
         decision = "modify"
         reason = "결과가 불충분합니다. 쿼리를 수정합니다"
     
     print(f"\n{'='*50}")
-    print(f"[결정] 다음 단계: {'종료' if decision == 'end' else '쿼리 수정'}")
+    print(f"[결정] 다음 단계: {'요약 답변 생성' if decision == 'summarize' else '쿼리 수정'}")
     print(f"[이유] {reason}")
     print(f"{'='*50}")
     return decision
@@ -183,11 +204,14 @@ def pc_check_graph(user_query: str) -> AgentState:
     workflow.add_node("optimize_query", optimize_query)
     workflow.add_node("check_results", check_results)
     workflow.add_node("modify_query", modify_query)
+    workflow.add_node("summarize_answer", summarize_answer)
     
     workflow.add_edge("extract_tables", "optimize_query")
     workflow.add_edge("optimize_query", "check_results")
-    workflow.add_conditional_edges("check_results", should_continue, {"end": END, "modify": "modify_query"})
+    workflow.add_conditional_edges("check_results", should_continue, 
+                                {"summarize": "summarize_answer", "modify": "modify_query"})
     workflow.add_edge("modify_query", "check_results")
+    workflow.add_edge("summarize_answer", END)
     workflow.set_entry_point("extract_tables")
     
     app = workflow.compile()
@@ -209,7 +233,7 @@ def pc_check_graph(user_query: str) -> AgentState:
 def run_pc_check(user_query: str) -> str:
     result = pc_check_graph(user_query)
     if result["answer"]:
-        return result["answer"]
+        return result["answer"].content
     else:
         return "처리 중 오류가 발생했거나 적절한 답변을 찾지 못했습니다."
 

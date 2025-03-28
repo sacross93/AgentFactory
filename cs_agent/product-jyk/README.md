@@ -68,3 +68,53 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+# 제플몰 AI 상담 시스템
+
+## 설치 및 실행 방법
+
+### 백엔드 (FastAPI 서버)
+
+1. 필요한 패키지 설치:
+```bash
+pip install -r requirements.txt
+```
+
+2. 서버 실행 (포트 8000):
+```bash
+cd cs_agent/product-jyk
+python server.py
+```
+
+3. 서버가 올바르게 실행되었는지 확인:
+   - 브라우저에서 http://localhost:8000/health 접속 후 상태 확인
+
+### 프론트엔드 (React 앱)
+
+1. 필요한 패키지 설치:
+```bash
+cd cs_agent/product-jyk
+npm install
+```
+
+2. 개발 서버 실행 (포트 3000):
+```bash
+npm start
+```
+
+3. 단독 챗봇 인터페이스 실행:
+   - 브라우저에서 http://localhost:3000/chat-popup.html 접속
+
+## 통신 문제 해결
+
+프론트엔드와 백엔드 통신 문제가 발생하는 경우:
+
+1. 포트 확인:
+   - 백엔드 서버가 8000 포트에서 실행 중인지 확인
+   - chat-popup.html 파일에서 API_BASE_URL이 'http://localhost:8000'으로 설정되어 있는지 확인
+
+2. CORS 이슈:
+   - 브라우저 콘솔에서 CORS 오류가 발생하는 경우 server.py의 CORS 설정 확인
+
+3. 네트워크 로그 확인:
+   - 브라우저 개발자 도구의 Network 탭에서 API 요청과 응답 확인

@@ -7,6 +7,11 @@ import sys
 import json
 sys.path.append('/home/wlsdud022/AgentFactory/cs_agent/ProtoType_JYK')
 from pc_check_func import *
+from langchain_google_genai import ChatGoogleGenerativeAI
+import os
+import dotenv
+dotenv.load_dotenv('./.env')
+os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY_JY")
 
 explainer_llm = OllamaLLM(
     model="gemma3:27b",
@@ -18,6 +23,22 @@ llm = OllamaLLM(
     model="qwen2.5-coder:32b",
     base_url="http://192.168.110.102:11434",
     temperature=0.1
+)
+
+gemini_llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-pro-exp-03-25",
+    temperature=0.4,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2,
+)
+
+flash_llm = ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash",
+    temperature=0.4,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2,
 )
 
 class TableInfo(BaseModel):
@@ -210,7 +231,7 @@ def query_modify_agent(user_query, table_info, query_info, result, attempt_histo
     attempt_history: ```{attempt_history}```
     """)
 
-    query_modify_chain = query_modify_prompt | llm | JsonOutputParser(pydantic_object=QueryModify)
+    query_modify_chain = query_modify_prompt | gemini_llm | JsonOutputParser(pydantic_object=QueryModify)
     query_modify_info = query_modify_chain.invoke({
         "user_query": user_query,
         "user_meaning": table_info['user_meaning'],
@@ -261,3 +282,24 @@ def check_result_agent(user_query, result):
     check_result_chain = check_result_prompt | explainer_llm | JsonOutputParser(pydantic_object=CheckResult)
     check_info = check_result_chain.invoke({"user_query": user_query, "result": result})
     return check_info
+
+def summary_answer_agent(check_info, user_query):
+    summary_answer_prompt = PromptTemplate.from_template("""
+    당신은 결과들을 모아서 사용자이 질의를 해결하는 답변을 잘하는 전문가입니다.
+    
+    해당 답변들을 보고 사용자의 질의를 해결하기 위해 최선을 다해서 답변해주세요.
+    1. 절대 결과에 있는 정보 외의 다른 정보를 사용하면 안됩니다.
+    2. 각종 오류에 관한 말은 최대한 일반적이고 돌려서 작성해주세요.
+    3. 컴퓨터에 대해 잘 모르는 사람도 이해할 수 있도록 작성해주세요.
+    4. 답변은 반드시 한글로 해주세요. MUST USE KOREAN.
+    
+    결과는 아래와 같습니다.
+    pc check result: ```{pc_check_result}```
+    
+    사용자 질의는 아래와 같습니다.
+    user question: ```{user_question}```
+    """)
+    
+    chain = summary_answer_prompt | flash_llm
+    result = chain.invoke({"pc_check_result": check_info, "user_question": user_query})
+    return result

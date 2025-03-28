@@ -2,7 +2,7 @@ import sys
 sys.path.append('/home/wlsdud022/AgentFactory/cs_agent/ProtoType_JYK')
 from cs_agent.ProtoType_JYK.pc_check_graph import run_pc_check
 from web_search_langraph import run_web_search
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 from langchain_ollama import OllamaLLM
 from pydantic import BaseModel, Field
 from langchain_core.output_parsers import JsonOutputParser
@@ -24,8 +24,23 @@ class OrchestratorAgent(BaseModel):
 orchestrator_parser = JsonOutputParser(pydantic_object=OrchestratorAgent)
 
 ## 중앙 Agent 정의
-def orchestrator_agent(user_query: str) -> Dict[str, Any]:
-    oa_prompt = f"""
+def orchestrator_agent(query: str, context: Optional[List[Dict[str, str]]] = None):
+    # 대화 기록 처리 로직
+    conversation_context = ""
+    if context and len(context) > 0:
+        # 대화 기록 형식화 (최대 3개의 이전 대화만 포함)
+        recent_context = context[-6:-1] if len(context) > 5 else context
+        conversation_context = "이전 대화 기록:\n"
+        for msg in recent_context:
+            role = "사용자" if msg["role"] == "user" else "AI"
+            conversation_context += f"{role}: {msg['content']}\n"
+        conversation_context += "\n"
+    
+    # 기존 프롬프트에 대화 맥락 추가
+    prompt = f"""
+    {conversation_context if conversation_context else ""}
+    사용자 질문: {query}
+    
     You are an expert analyst who determines which specialized agent(s) should be deployed to resolve the user's query.
     
     Analyze the user's question carefully and decide which agent(s) would be most appropriate to address it.
@@ -65,11 +80,9 @@ def orchestrator_agent(user_query: str) -> Dict[str, Any]:
     ```
     {{"properties":{{"reasoning": {{"title": "Reasoning", "description": "Overall reasoning for the agent selection strategy.", "type": "string"}}, "agents": {{"title": "Agents", "description": "List of agents to execute for resolving the user's query.", "type": "array", "items": {{"properties": {{"reason": {{"title": "Reason", "description": "Explain why you think this Agent is suitable to resolve the user's query.", "type": "string"}}, "agent_type": {{"title": "Agent Type", "description": "The type of agent to execute.", "enum": ["pc_check", "web_search"], "type": "string"}}}}, "required": ["reason", "agent_type"]}}}}}}, "required": ["reasoning", "agents"]}}
     ```
-    
-    User question: {user_query}
     """
     
-    response = llm.invoke(oa_prompt)
+    response = llm.invoke(prompt)
     result = orchestrator_parser.parse(response)
     return result
 

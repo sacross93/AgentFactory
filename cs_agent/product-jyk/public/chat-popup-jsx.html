@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>제플몰 AI 상담</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      background-color: #f9fafb;
+      height: 100vh;
+      overflow: hidden;
+    }
+    
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100%;
+      background-color: #f9fafb;
+    }
+    
+    .chat-header {
+      background-color: #4F46E5;
+      color: white;
+      padding: 15px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .header-logo img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+    }
+    
+    .header-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    /* 서버 상태 표시 */
+    .server-status {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 12px;
+      margin-left: 10px;
+      display: inline-flex;
+      align-items: center;
+    }
+    
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    
+    .status-online {
+      background-color: #22c55e;
+    }
+    
+    .status-offline {
+      background-color: #ef4444;
+    }
+    
+    .server-online {
+      background-color: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+    
+    .server-offline {
+      background-color: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+    
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    .message {
+      display: flex;
+      max-width: 80%;
+      margin-bottom: 16px;
+    }
+    
+    .user-message {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    
+    .bot-message {
+      align-self: flex-start;
+    }
+    
+    .message-avatar {
+      width: 36px;
+      height: 36px;
+      margin: 0 8px;
+      flex-shrink: 0;
+    }
+    
+    .message-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    
+    .message-content {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .message-header {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+    }
+    
+    .user-message .message-header {
+      justify-content: flex-end;
+    }
+    
+    .sender-name {
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    
+    .message-time {
+      font-size: 11px;
+      opacity: 0.8;
+    }
+    
+    .message-bubble {
+      padding: 12px 16px;
+      border-radius: 18px;
+      position: relative;
+      max-width: 100%;
+    }
+    
+    .bot-message .message-bubble {
+      background-color: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-top-left-radius: 4px;
+    }
+    
+    .user-message .message-bubble {
+      background-color: #e9f1ff;
+      border: 1px solid #d1e3ff;
+      border-top-right-radius: 4px;
+      color: #1e40af;
+    }
+    
+    .message-text {
+      line-height: 1.5;
+      font-size: 14px;
+      word-break: break-word;
+    }
+    
+    .message-text p {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+    
+    .message-text p:last-child {
+      margin-bottom: 0;
+    }
+    
+    /* 코드 블록 스타일 */
+    .message-text pre {
+      background-color: #f1f5f9;
+      padding: 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    
+    .message-text code {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+    }
+    
+    .message-text :not(pre) > code {
+      background-color: #f1f5f9;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    
+    .chat-input {
+      padding: 16px;
+      background-color: white;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    
+    .message-input {
+      flex: 1;
+      border: 1px solid #d1d5db;
+      border-radius: 24px;
+      padding: 12px 16px;
+      font-size: 14px;
+      resize: none;
+      height: 44px;
+      outline: none;
+      font-family: inherit;
+    }
+    
+    .message-input:focus {
+      border-color: #4F46E5;
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    }
+    
+    /* 화살표 제거 */
+    .message-input::-webkit-resizer {
+      display: none;
+    }
+    
+    /* textarea 화살표 숨기기 - IE/Edge */
+    .message-input::-ms-expand {
+      display: none;
+    }
+    
+    /* Firefox에서 화살표 숨기기 */
+    .message-input {
+      overflow: hidden;
+    }
+    
+    .send-button {
+      background-color: #4F46E5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      width: auto;
+      height: 44px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .send-button:hover {
+      background-color: #4338ca;
+    }
+    
+    .send-button:disabled {
+      background-color: #a5b4fc;
+      cursor: not-allowed;
+    }
+    
+    /* 로딩 애니메이션 */
+    .loading-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+    }
+    
+    .loading-dots {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    
+    .loading-dots span {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #6b7280;
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+    
+    .loading-dots span:nth-child(1) {
+      animation-delay: -0.32s;
+    }
+    
+    .loading-dots span:nth-child(2) {
+      animation-delay: -0.16s;
+    }
+    
+    @keyframes bounce {
+      0%, 80%, 100% {
+        transform: scale(0);
+        opacity: 0.6;
+      }
+      40% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+    
+    /* 응답성 */
+    @media (max-width: 640px) {
+      .message {
+        max-width: 90%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <div class="header-logo">
+        <img src="/chatbot.png" alt="제플몰 AI" />
+        <span class="header-title">제플몰 AI 상담</span>
+        <div id="server-status" class="server-status server-offline">
+          <div class="status-indicator status-offline"></div>
+          <span>연결 중...</span>
+        </div>
+      </div>
+    </div>
+    
+    <div id="chat-area" class="chat-area">
+      <!-- 메시지 영역 -->
+    </div>
+    
+    <div class="chat-input">
+      <textarea 
+        class="message-input" 
+        id="messageInput" 
+        placeholder="메시지를 입력하세요..." 
+        rows="1"
+        onkeypress="if(event.keyCode === 13 && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
+      ></textarea>
+      <button 
+        class="send-button" 
+        id="sendButton"
+        onclick="sendMessage()"
+      >
+        전송
+      </button>
+    </div>
+  </div>
+  
+  <script>
+    // 환경 설정
+    const API_BASE_URL = window.location.hostname.includes('localhost') ? 'http://localhost:8000' : '';
+    const DEBUG_MODE = false;
+    
+    // 전역 변수
+    let chatArea;
+    let messageInput;
+    let sendButton;
+    let serverStatusEl;
+    let serverOnline = false;
+    let messageId = 0;
+    
+    // 대화 기록 저장 배열 추가
+    let chatHistory = [];
+    // 세션 ID 생성 (페이지 로드마다 유지되는 고유 ID)
+    const sessionId = 'chat-' + Date.now();
+    
+    // 초기화 함수
+    function init() {
+      // DOM 요소
+      chatArea = document.getElementById('chat-area');
+      messageInput = document.getElementById('messageInput');
+      sendButton = document.getElementById('sendButton');
+      serverStatusEl = document.getElementById('server-status');
+      
+      // 웰컴 메시지
+      appendMessage({
+        id: 'welcome',
+        role: 'bot',
+        content: '안녕하세요! 제플몰 AI 상담봇입니다.<br>무엇을 도와드릴까요?',
+        time: getCurrentTime()
+      });
+      
+      // 초기 서버 상태 확인
+      checkServerStatus();
+      
+      // 주기적 서버 상태 확인 설정
+      setInterval(checkServerStatus, 3000);
+      
+      // 입력창에 포커스
+      messageInput.focus();
+    }
+    
+    // 현재 시간 포맷팅
+    function getCurrentTime() {
+      return new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    }
+    
+    // 디버그 로그
+    function logDebug(...args) {
+      if (DEBUG_MODE) {
+        console.log(...args);
+      }
+    }
+    
+    // 메시지 추가 함수 수정 - 대화 히스토리에 저장 기능 추가
+    function appendMessage(message) {
+      const messageEl = document.createElement('div');
+      messageEl.id = message.id;
+      messageEl.className = `message ${message.role}-message`;
+      
+      messageEl.innerHTML = `
+        <div class="message-avatar">
+          <img src="${message.role === 'bot' ? '/chatbot.png' : '/user.png'}" alt="${message.role === 'bot' ? 'AI' : '사용자'}">
+        </div>
+        <div class="message-content">
+          <div class="message-header">
+            <span class="sender-name">${message.role === 'bot' ? '제플몰' : '사용자'}</span>
+            <span class="message-time">${message.time}</span>
+          </div>
+          <div class="message-bubble">
+            <div class="message-text">${message.content}</div>
+          </div>
+        </div>
+      `;
+      
+      chatArea.appendChild(messageEl);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      
+      // 대화 히스토리에 저장 (웰컴 메시지는 제외)
+      if (message.id !== 'welcome' && message.id !== 'loading-message') {
+        chatHistory.push({
+          role: message.role === 'user' ? 'user' : 'assistant',
+          content: message.content.replace(/<br>/g, '\n').replace(/<[^>]*>/g, '') // HTML 태그 제거
+        });
+        
+        // 디버그 로그
+        logDebug('대화 히스토리 업데이트:', chatHistory);
+      }
+    }
+    
+    // 로딩 표시
+    function showLoading() {
+      hideLoading();
+      
+      const loadingMessage = document.createElement('div');
+      loadingMessage.id = 'loading-message';
+      loadingMessage.className = 'message bot-message';
+      
+      loadingMessage.innerHTML = `
+        <div class="message-avatar">
+          <img src="/chatbot.png" alt="AI">
+        </div>
+        <div class="message-content">
+          <div class="message-header">
+            <span class="sender-name">제플몰</span>
+            <span class="message-time">${getCurrentTime()}</span>
+          </div>
+          <div class="message-bubble">
+            <div class="message-text">
+              <div class="loading-container">
+                <div class="loading-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      chatArea.appendChild(loadingMessage);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+    
+    // 로딩 숨기기
+    function hideLoading() {
+      const loadingEl = document.getElementById('loading-message');
+      if (loadingEl) {
+        loadingEl.remove();
+      }
+    }
+    
+    // 서버 상태 업데이트
+    function updateServerStatus(isOnline) {
+      if (isOnline === serverOnline) return;
+      
+      serverOnline = isOnline;
+      
+      serverStatusEl.className = isOnline ? 
+        'server-status server-online' : 
+        'server-status server-offline';
+      
+      serverStatusEl.innerHTML = isOnline ?
+        '<div class="status-indicator status-online"></div><span>연결됨</span>' :
+        '<div class="status-indicator status-offline"></div><span>연결 끊김</span>';
+      
+      messageInput.disabled = !isOnline;
+      sendButton.disabled = !isOnline;
+      
+      if (isOnline) {
+        messageInput.placeholder = '메시지를 입력하세요...';
+        messageInput.focus();
+      } else {
+        messageInput.placeholder = '서버에 연결할 수 없습니다...';
+      }
+    }
+    
+    // 서버 상태 체크
+    async function checkServerStatus() {
+      try {
+        const response = await fetchWithTimeout(`${API_BASE_URL}/health`, { method: 'GET' }, 3000);
+        
+        if (response.ok) {
+          updateServerStatus(true);
+        } else {
+          updateServerStatus(false);
+        }
+      } catch (error) {
+        console.error('서버 상태 확인 실패:', error);
+        updateServerStatus(false);
+      }
+    }
+    
+    // AI 응답 포맷팅 (마크다운 등 처리)
+    function formatAIResponse(text) {
+      if (!text) return "서버에서 응답을 받지 못했습니다.";
+      
+      // 간단한 마크다운 변환
+      return text
+        .replace(/\n/g, '<br>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+    }
+    
+    // 타임아웃 있는 fetch
+    async function fetchWithTimeout(url, options, timeout = 10000) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
+    }
+    
+    // 쿼리 제출 함수 수정 - 대화 히스토리 전송
+    async function submitQuery(query) {
+      try {
+        logDebug("쿼리 제출 시작", query);
+        logDebug("대화 히스토리", chatHistory);
+        
+        const response = await fetchWithTimeout(`${API_BASE_URL}/query`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            query: query,
+            session_id: sessionId, // 고유 세션 ID 사용
+            timeout: 180, // 3분 타임아웃 설정
+            chat_history: chatHistory // 대화 히스토리 전송
+          })
+        }, 10000); // 10초 요청 타임아웃
+        
+        if (!response.ok) {
+          throw new Error(`API 오류: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.json();
+      } catch (error) {
+        logDebug("쿼리 제출 실패", error);
+        throw error;
+      }
+    }
+    
+    // 쿼리 상태 확인 함수
+    async function checkQueryStatus(requestId) {
+      const response = await fetch(`${API_BASE_URL}/status/${requestId}`);
+      return await response.json();
+    }
+    
+    // 쿼리 결과 가져오기 함수
+    async function getQueryResult(requestId) {
+      const response = await fetch(`${API_BASE_URL}/result/${requestId}`);
+      return await response.json();
+    }
+    
+    // 결과 처리 함수
+    async function processResult(result) {
+      let answer = '';
+      
+      try {
+        // 다양한 결과 형식 처리
+        if (result) {
+          if (result.answer) {
+            answer = result.answer;
+          } else if (result.response) {
+            answer = result.response;
+          } else if (result.error) {
+            throw new Error(result.error);
+          } else if (typeof result === 'string') {
+            answer = result;
+          } else {
+            const resultStr = JSON.stringify(result, null, 2);
+            logDebug("서버 응답 구조 분석:", resultStr);
+            
+            if (Object.keys(result).length > 0) {
+              let maxField = '';
+              let maxLength = 0;
+              
+              Object.keys(result).forEach(key => {
+                if (typeof result[key] === 'string' && result[key].length > maxLength) {
+                  maxField = key;
+                  maxLength = result[key].length;
+                }
+              });
+              
+              if (maxLength > 0) {
+                answer = result[maxField];
+                logDebug(`가장 긴 문자열 필드(${maxField})를 답변으로 사용`);
+              } else {
+                answer = "응답 데이터를 해석할 수 없습니다.";
+              }
+            } else {
+              answer = "서버에서 빈 응답이 반환되었습니다.";
+            }
+          }
+        } else {
+          throw new Error('응답 데이터 없음');
+        }
+        
+        return answer;
+      } catch (error) {
+        logDebug('결과 처리 오류:', error);
+        throw error;
+      }
+    }
+    
+    // 메시지 전송 함수
+    async function sendMessage() {
+      if (!serverOnline) {
+        alert('서버에 연결되어 있지 않습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+      
+      const text = messageInput.value.trim();
+      if (!text) return;
+      
+      // 사용자 메시지 추가
+      appendMessage({
+        id: 'user-' + messageId++,
+        role: 'user',
+        content: text.replace(/\n/g, '<br>'),
+        time: getCurrentTime()
+      });
+      
+      // 입력창 초기화 및 비활성화
+      messageInput.value = '';
+      messageInput.disabled = true;
+      sendButton.disabled = true;
+      
+      // 로딩 표시
+      showLoading();
+      
+      try {
+        // 1. 쿼리 제출
+        const queryResult = await submitQuery(text);
+        logDebug('쿼리 제출 응답:', queryResult);
+        
+        // 요청 ID 확인
+        const requestId = queryResult.request_id || queryResult.answer_id || queryResult.id;
+        
+        if (!requestId) {
+          // 요청 ID가 없는 경우 (즉시 응답)
+          const answer = await processResult(queryResult);
+          hideLoading();
+          appendMessage({
+            id: 'bot-' + messageId++,
+            role: 'bot',
+            content: formatAIResponse(answer),
+            time: getCurrentTime()
+          });
+          return;
+        }
+        
+        // 2. 결과 폴링
+        logDebug(`요청 ID: ${requestId} - 상태 확인 시작`);
+        
+        let attempts = 0;
+        const maxAttempts = 60; // 최대 3분 (3초 간격)
+        
+        while (attempts < maxAttempts) {
+          try {
+            // 상태 확인
+            logDebug(`상태 확인 시도 ${attempts+1}/${maxAttempts}`);
+            const statusData = await checkQueryStatus(requestId);
+            logDebug('상태 응답:', statusData);
+            
+            // 완료 여부 확인
+            if (statusData.status === 'completed' || statusData.status === 'success') {
+              // 결과 가져오기
+              let finalResult;
+              
+              if (statusData.answer || statusData.response || statusData.result) {
+                finalResult = statusData;
+              } else {
+                const resultData = await getQueryResult(requestId);
+                finalResult = resultData;
+              }
+              
+              const answer = await processResult(finalResult);
+              
+              hideLoading();
+              appendMessage({
+                id: 'bot-' + messageId++,
+                role: 'bot',
+                content: formatAIResponse(answer),
+                time: getCurrentTime()
+              });
+              
+              break;
+            } else if (statusData.status === 'error' || statusData.status === 'failed') {
+              hideLoading();
+              appendMessage({
+                id: 'error-' + messageId++,
+                role: 'bot',
+                content: `처리 중 오류가 발생했습니다: ${statusData.message || '알 수 없는 오류'}`,
+                time: getCurrentTime()
+              });
+              
+              break;
+            }
+            
+            // 아직 처리 중이면 대기
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+          } catch (pollError) {
+            logDebug('폴링 중 오류:', pollError);
+            
+            // 오류가 있어도 몇 번은 계속 시도
+            attempts++;
+            if (attempts >= maxAttempts) {
+              hideLoading();
+              appendMessage({
+                id: 'error-' + messageId++,
+                role: 'bot',
+                content: `응답을 가져오는 중 오류가 발생했습니다: ${pollError.message}`,
+                time: getCurrentTime()
+              });
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+        
+        // 최대 시도 횟수 초과
+        if (attempts >= maxAttempts) {
+          hideLoading();
+          appendMessage({
+            id: 'timeout-' + messageId++,
+            role: 'bot',
+            content: '응답 처리 시간이 초과되었습니다. 나중에 다시 시도해주세요.',
+            time: getCurrentTime()
+          });
+        }
+        
+      } catch (error) {
+        // 전체 프로세스 오류
+        hideLoading();
+        logDebug('전체 요청 처리 오류:', error);
+        
+        appendMessage({
+          id: 'error-' + messageId++,
+          role: 'bot',
+          content: `오류가 발생했습니다: ${error.message}`,
+          time: getCurrentTime()
+        });
+      } finally {
+        // 입력창 다시 활성화
+        messageInput.disabled = !serverOnline;
+        sendButton.disabled = !serverOnline;
+        if (!messageInput.disabled) {
+          messageInput.focus();
+        }
+      }
+    }
+    
+    // 페이지 로드 시 초기화
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html> 
