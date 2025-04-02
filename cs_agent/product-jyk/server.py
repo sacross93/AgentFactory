@@ -20,7 +20,7 @@ import asyncio
 from datetime import datetime
 
 # 직접적인 import 경로로 변경
-from ProtoType_JYK.orchestrator_graph_improved import orchestrator_graph
+from ProtoType_JYK.orchestrator_graph_jyk import orchestrator_graph
 
 # 로깅 설정
 logging.basicConfig(
@@ -40,7 +40,7 @@ app = FastAPI(
 # CORS 설정 - 프로덕션 환경용
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["192.168.110.101"],
+    allow_origins=["http://192.168.110.101", "https://192.168.110.101", "http://localhost:8000", "https://ai-chatbot.co.kr"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Origin", "Accept", "X-Requested-With"],

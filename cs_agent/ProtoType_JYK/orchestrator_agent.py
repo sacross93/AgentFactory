@@ -1,7 +1,5 @@
 import sys
 sys.path.append('/home/wlsdud022/AgentFactory/cs_agent/ProtoType_JYK')
-from cs_agent.ProtoType_JYK.pc_check_graph import run_pc_check
-from web_search_langraph import run_web_search
 from typing import Dict, Any, List, Literal, Optional
 from langchain_ollama import OllamaLLM
 from pydantic import BaseModel, Field
@@ -14,7 +12,7 @@ llm = OllamaLLM(model="gemma3:27b", base_url="http://192.168.110.102:11434")
 ## 중앙 Agent Json 구조(pydantic)
 class AgentSelection(BaseModel):
     reason: str = Field(description="Explain why you think this Agent is suitable to resolve the user's query.")
-    agent_type: Literal["pc_check", "web_search"] = Field(description="The type of agent to execute.")
+    agent_type: Literal["pc_check", "web_search", "jeplmall_infor", "recomended_AIPC"] = Field(description="The type of agent to execute.")
 
 class OrchestratorAgent(BaseModel):
     reasoning: str = Field(description="Overall reasoning for the agent selection strategy.")
@@ -60,12 +58,31 @@ def orchestrator_agent(query: str, context: Optional[List[Dict[str, str]]] = Non
        - Getting up-to-date information about products, technologies, or trends
        - Finding game requirements and performance benchmarks
        - Answering questions that require broader knowledge
+       
+    3. jeplmall_infor: This agent provides information about Zepl Mall's(제플몰) services and policies. Use this agent ONLY when the query involves:
+       - After-sales service (AS) details and policies
+       - Exchange and refund policies
+       - Shipping methods, costs, and delivery timeframes
+       - Deposit account information
+       - Operating hours and contact details
+       - Any specific Zepl Mall(제플몰) shopping-related inquiries
+       - DO NOT use this agent for general computer hardware questions or recommendations
+       
+    4. recomended_AIPC: This agent specializes in recommending AI PC configurations for on-premise local LLM operations. Use this agent ONLY when:
+       - The user is specifically asking about AI PC configurations for running local LLMs
+       - Questions involve Private LLM AI PC hardware requirements
+       - The query is about compatibility between hardware and specific LLM models
+       - The user needs guidance on on-premise LLM deployment
+       - Questions about Zepl's Private LLM AI PC product lineup
+       - DO NOT use this agent for general PC recommendations unrelated to AI/LLM usage
     
     IMPORTANT SELECTION CRITERIA:
     - Choose ONLY the agent(s) that are strictly necessary to answer the query
     - If the user mentions their hardware but is asking about external information (like game requirements), use ONLY web_search
     - Use pc_check ONLY when information from our company's specific database is required
     - For questions about whether certain hardware can run a game well, web_search alone is usually sufficient
+    - Use jeplmall_infor ONLY for queries specifically about Zepl Mall's(제플몰) services, policies, or shopping experience
+    - Use recomended_AIPC ONLY when the query is specifically about AI PC configurations for local LLM deployment
     
     Your response must be a JSON object with two keys:
         reasoning:
@@ -74,11 +91,11 @@ def orchestrator_agent(query: str, context: Optional[List[Dict[str, str]]] = Non
             - Provide a list of selected agents.
             - Each agent should include:
                 - reason: Why this agent is suitable for resolving the user's query
-                - agent_type: The type of agent to execute ("pc_check" or "web_search")
+                - agent_type: The type of agent to execute ("pc_check", "web_search", "jeplmall_infor", or "recomended_AIPC")
     
     Here is the output schema:
     ```
-    {{"properties":{{"reasoning": {{"title": "Reasoning", "description": "Overall reasoning for the agent selection strategy.", "type": "string"}}, "agents": {{"title": "Agents", "description": "List of agents to execute for resolving the user's query.", "type": "array", "items": {{"properties": {{"reason": {{"title": "Reason", "description": "Explain why you think this Agent is suitable to resolve the user's query.", "type": "string"}}, "agent_type": {{"title": "Agent Type", "description": "The type of agent to execute.", "enum": ["pc_check", "web_search"], "type": "string"}}}}, "required": ["reason", "agent_type"]}}}}}}, "required": ["reasoning", "agents"]}}
+    {{"properties":{{"reasoning": {{"title": "Reasoning", "description": "Overall reasoning for the agent selection strategy.", "type": "string"}}, "agents": {{"title": "Agents", "description": "List of agents to execute for resolving the user's query.", "type": "array", "items": {{"properties": {{"reason": {{"title": "Reason", "description": "Explain why you think this Agent is suitable to resolve the user's query.", "type": "string"}}, "agent_type": {{"title": "Agent Type", "description": "The type of agent to execute.", "enum": ["pc_check", "web_search", "jeplmall_infor", "recomended_AIPC"], "type": "string"}}}}, "required": ["reason", "agent_type"]}}}}}}, "required": ["reasoning", "agents"]}}
     ```
     """
     

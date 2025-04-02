@@ -231,7 +231,7 @@ def query_modify_agent(user_query, table_info, query_info, result, attempt_histo
     attempt_history: ```{attempt_history}```
     """)
 
-    query_modify_chain = query_modify_prompt | gemini_llm | JsonOutputParser(pydantic_object=QueryModify)
+    query_modify_chain = query_modify_prompt | flash_llm | JsonOutputParser(pydantic_object=QueryModify)
     query_modify_info = query_modify_chain.invoke({
         "user_query": user_query,
         "user_meaning": table_info['user_meaning'],
