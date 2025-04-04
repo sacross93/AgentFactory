@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>제플몰 종합 상담 봇 팝업 ver</title>
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -506,6 +507,100 @@
     /* AI 메시지의 말풍선 내용이 넘치지 않도록 조정 */
     .ai-message .message-bubble {
       max-width: 85%;  /* AI 메시지는 조금 더 넓게 */
+    }
+
+    /* 마크다운 스타일 */
+    .message-bubble :is(h1, h2, h3, h4, h5, h6) {
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .message-bubble h1 { font-size: 1.5em; }
+    .message-bubble h2 { font-size: 1.25em; }
+    .message-bubble h3 { font-size: 1.1em; }
+
+    .message-bubble p {
+      margin-bottom: 1em;
+      line-height: 1.6;
+    }
+
+    .message-bubble ul, 
+    .message-bubble ol {
+      margin-bottom: 1em;
+      padding-left: 2em;
+    }
+
+    .message-bubble li {
+      margin-bottom: 0.5em;
+    }
+
+    .message-bubble code {
+      background-color: rgba(0, 0, 0, 0.1);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+
+    .message-bubble pre {
+      background-color: rgba(0, 0, 0, 0.1);
+      padding: 1em;
+      border-radius: 5px;
+      overflow-x: auto;
+      margin-bottom: 1em;
+    }
+
+    .message-bubble pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+
+    .message-bubble blockquote {
+      border-left: 4px solid #6366f1;
+      margin: 1em 0;
+      padding-left: 1em;
+      color: #666;
+    }
+
+    .message-bubble a {
+      color: #6366f1;
+      text-decoration: none;
+    }
+
+    .message-bubble a:hover {
+      text-decoration: underline;
+    }
+
+    .message-bubble table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 1em;
+    }
+
+    .message-bubble th,
+    .message-bubble td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+
+    .message-bubble th {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    /* 다크 모드에서의 마크다운 스타일 */
+    body.dark .message-bubble code,
+    body.dark .message-bubble pre {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    body.dark .message-bubble blockquote {
+      color: #ccc;
+    }
+
+    body.dark .message-bubble th {
+      background-color: rgba(255, 255, 255, 0.05);
     }
   </style>
 </head>
@@ -1249,15 +1344,24 @@
     function formatAIResponse(text) {
       if (!text) return '<p>응답이 없습니다.</p>';
       
-      // 줄바꿈을 <br> 태그로 변환
-      let formatted = text.replace(/\n/g, '<br>');
+      // 마크다운 렌더링 옵션 설정
+      marked.setOptions({
+        breaks: true, // 줄바꿈을 <br>로 변환
+        gfm: true, // GitHub Flavored Markdown 지원
+        headerIds: false, // 헤더 ID 자동 생성 비활성화
+        mangle: false, // 링크 텍스트의 특수문자 변환 비활성화
+        sanitize: true // XSS 방지를 위한 HTML 태그 이스케이프
+      });
+      
+      // 마크다운 렌더링
+      let rendered = marked.parse(text);
       
       // 이미 HTML 태그가 포함되어 있지 않은 경우에만 <p> 태그로 감싸기
-      if (!formatted.includes('<p>') && !formatted.includes('<div>') && !formatted.includes('<ul>')) {
-        formatted = `<p>${formatted}</p>`;
+      if (!rendered.includes('<p>') && !rendered.includes('<div>') && !rendered.includes('<ul>')) {
+        rendered = `<p>${rendered}</p>`;
       }
       
-      return formatted;
+      return rendered;
     }
   </script>
 </body>

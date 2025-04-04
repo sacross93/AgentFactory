@@ -20,7 +20,8 @@ import asyncio
 from datetime import datetime
 
 # 직접적인 import 경로로 변경
-from ProtoType_JYK.orchestrator_graph_jyk import orchestrator_graph
+# from ProtoType_JYK.orchestrator_graph_jyk import orchestrator_graph
+from ProtoType_JYK.ai_pc_agents import run_chatbot
 
 # 로깅 설정
 logging.basicConfig(
@@ -95,9 +96,12 @@ async def process_query(request_info: RequestInfo, timeout: int):
         loop = asyncio.get_event_loop()
         request_info.result = await loop.run_in_executor(
             None, 
-            lambda: orchestrator_graph(
-                request_info.query, 
-                chat_history=request_info.chat_history
+            # lambda: orchestrator_graph(
+            #     request_info.query, 
+            #     chat_history=request_info.chat_history
+            # )
+            lambda: run_chatbot(
+                request_info.query
             )
         )
         
